@@ -1,0 +1,568 @@
+{
+ "matches": [
+  {
+   "sheet": "Dicembre",
+   "date": "2025-12-06",
+   "bianca": [
+    "Kali",
+    "Brazo",
+    "Hal",
+    "Parker",
+    "Stout",
+    "Xena",
+    "Panzer"
+   ],
+   "nera": [
+    "Jalid",
+    "Nikita",
+    "Thor",
+    "Tyr",
+    "Delta",
+    "Zeppelin",
+    "Miles"
+   ],
+   "win_bianca": false,
+   "win_nera": true,
+   "mom": [
+    "Miles"
+   ]
+  },
+  {
+   "sheet": "Dicembre",
+   "date": "2025-12-20",
+   "bianca": [
+    "Panzer",
+    "Miles",
+    "Brazo",
+    "Nikita",
+    "Che",
+    "Stein",
+    "Mcfly"
+   ],
+   "nera": [
+    "Tyr",
+    "Thor",
+    "Delta",
+    "Athos",
+    "Jesus",
+    "Parker",
+    "Windy",
+    "Xena"
+   ],
+   "win_bianca": false,
+   "win_nera": true,
+   "mom": [
+    "Xena"
+   ]
+  },
+  {
+   "sheet": "GennaioFebbraio",
+   "date": "2026-01-03",
+   "bianca": [
+    "Delta",
+    "Thor",
+    "Tyr",
+    "Jesus",
+    "Windy",
+    "Gatto",
+    "Paola"
+   ],
+   "nera": [
+    "Miles",
+    "Parker",
+    "Nikita",
+    "Che",
+    "Stein",
+    "Stout",
+    "Robin",
+    "Huracan"
+   ],
+   "win_bianca": true,
+   "win_nera": false,
+   "mom": [
+    "Tyr"
+   ]
+  },
+  {
+   "sheet": "GennaioFebbraio",
+   "date": "2026-01-17",
+   "bianca": [
+    "Thor",
+    "Windy",
+    "Miles",
+    "Xena",
+    "Stein",
+    "Panzer",
+    "Kali",
+    "Stout"
+   ],
+   "nera": [
+    "Nikita",
+    "Athos",
+    "Matteo",
+    "Parker",
+    "Brazo",
+    "Marì",
+    "Dalì"
+   ],
+   "win_bianca": false,
+   "win_nera": true,
+   "mom": [
+    "Miles"
+   ]
+  },
+  {
+   "sheet": "GennaioFebbraio",
+   "date": "2026-01-31",
+   "bianca": [
+    "Thor",
+    "Tyr",
+    "Miles",
+    "Paola",
+    "Marì",
+    "Stein",
+    "Stout"
+   ],
+   "nera": [
+    "Nikita",
+    "Windy",
+    "Parker",
+    "Athos",
+    "Dalì",
+    "Hal",
+    "Brazo",
+    "Kali"
+   ],
+   "win_bianca": false,
+   "win_nera": true,
+   "mom": [
+    "Stein",
+    "Kali"
+   ]
+  },
+  {
+   "sheet": "GennaioFebbraio",
+   "date": "2026-02-14",
+   "bianca": [
+    "Sabo",
+    "Parker",
+    "Athos",
+    "Brazo",
+    "Kali",
+    "Zeppelin"
+   ],
+   "nera": [
+    "Nikita",
+    "Thor",
+    "Stout",
+    "Joker",
+    "Panzer",
+    "Miles"
+   ],
+   "win_bianca": true,
+   "win_nera": false,
+   "mom": [
+    "Kali"
+   ]
+  },
+  {
+   "sheet": "GennaioFebbraio",
+   "date": "2026-01-10",
+   "bianca": [
+    "Jesus",
+    "Nikita",
+    "Windy",
+    "Gatto",
+    "Hal",
+    "Dalì",
+    "Matteo"
+   ],
+   "nera": [
+    "Thor",
+    "Parker",
+    "Miles",
+    "Stout",
+    "Panzer",
+    "Xena",
+    "Paola"
+   ],
+   "win_bianca": true,
+   "win_nera": false,
+   "mom": [
+    "Hal"
+   ]
+  },
+  {
+   "sheet": "GennaioFebbraio",
+   "date": "2026-02-07",
+   "bianca": [
+    "Nikita",
+    "Parker",
+    "Athos",
+    "Dalì",
+    "Brazo",
+    "Sabo"
+   ],
+   "nera": [
+    "Thor",
+    "Hal",
+    "Miles",
+    "Kali",
+    "Stein",
+    "Panzer"
+   ],
+   "win_bianca": false,
+   "win_nera": true,
+   "mom": [
+    "Miles"
+   ]
+  },
+  {
+   "sheet": "GennaioFebbraio",
+   "date": "2026-02-18",
+   "bianca": [
+    "Athos",
+    "Nikita",
+    "Brazo",
+    "Mcfly",
+    "Panzer",
+    "Miles",
+    "Sabo"
+   ],
+   "nera": [
+    "Parker",
+    "Thor",
+    "Kali",
+    "Hal",
+    "Jalid",
+    "Stout",
+    "Dalì",
+    "Stein"
+   ],
+   "win_bianca": false,
+   "win_nera": true,
+   "mom": []
+  },
+  {
+   "sheet": "MarzoAprile",
+   "date": "2026-03-07",
+   "bianca": [
+    "Thor",
+    "Dalì",
+    "Hal",
+    "Athos",
+    "Gatto",
+    "Windy",
+    "Nike"
+   ],
+   "nera": [
+    "Brazo",
+    "Kali",
+    "Tyr",
+    "Delta",
+    "Miles",
+    "Sabo",
+    "Paola",
+    "Nikita"
+   ],
+   "win_bianca": true,
+   "win_nera": false,
+   "mom": [
+    "Sabo"
+   ]
+  },
+  {
+   "sheet": "MarzoAprile",
+   "date": "2026-03-21",
+   "bianca": [
+    "Hal",
+    "Parker",
+    "Tyr",
+    "Kali",
+    "Brazo",
+    "Paola",
+    "Sabo",
+    "Xena",
+    "Nike",
+    "Stout"
+   ],
+   "nera": [
+    "Athos",
+    "Thor",
+    "Nikita",
+    "Windy",
+    "Miles",
+    "Jesus",
+    "Katana"
+   ],
+   "win_bianca": true,
+   "win_nera": false,
+   "mom": []
+  },
+  {
+   "sheet": "MarzoAprile",
+   "date": "2026-04-04",
+   "bianca": [
+    "Athos",
+    "Thor",
+    "Miles",
+    "Xena",
+    "Katana",
+    "Nike"
+   ],
+   "nera": [
+    "Tyr",
+    "Dalì",
+    "Nikita",
+    "Brazo",
+    "Delta",
+    "Stout"
+   ],
+   "win_bianca": true,
+   "win_nera": false,
+   "mom": [
+    "Thor"
+   ]
+  },
+  {
+   "sheet": "MarzoAprile",
+   "date": "2026-04-18",
+   "bianca": [
+    "Kali",
+    "Miles",
+    "Katana",
+    "Sabo"
+   ],
+   "nera": [
+    "Hal",
+    "Thor",
+    "Tyr",
+    "Brazo",
+    "Xena",
+    "Stout"
+   ],
+   "win_bianca": false,
+   "win_nera": true,
+   "mom": [
+    "Stout"
+   ]
+  },
+  {
+   "sheet": "MarzoAprile",
+   "date": "2026-03-14",
+   "bianca": [
+    "Hal",
+    "Athos",
+    "Nikita",
+    "Tyr",
+    "Miles",
+    "Paola",
+    "Jesus"
+   ],
+   "nera": [
+    "Thor",
+    "Dalì",
+    "Kali",
+    "Stout",
+    "Nike",
+    "Sabo",
+    "Katana"
+   ],
+   "win_bianca": true,
+   "win_nera": false,
+   "mom": [
+    "Hal"
+   ]
+  },
+  {
+   "sheet": "MaggioGiugno",
+   "date": "2026-05-02",
+   "bianca": [
+    "Parker",
+    "Nikita",
+    "Miles",
+    "Stout",
+    "Delta"
+   ],
+   "nera": [
+    "Thor",
+    "Kali",
+    "Katana",
+    "Golem",
+    "Sabo",
+    "Nike"
+   ],
+   "win_bianca": false,
+   "win_nera": true,
+   "mom": [
+    "Nike"
+   ]
+  },
+  {
+   "sheet": "MaggioGiugno",
+   "date": "2026-05-30",
+   "bianca": [
+    "Nike",
+    "Jesus",
+    "Tyr",
+    "Saiyan",
+    "Berserk",
+    "Marì",
+    "Matteo",
+    "Jalid",
+    "Xena"
+   ],
+   "nera": [
+    "Thor",
+    "Miles",
+    "Sabo",
+    "Nikita",
+    "Katana",
+    "Windy",
+    "Paola",
+    "Parker",
+    "Majin",
+    "Kali"
+   ],
+   "win_bianca": true,
+   "win_nera": false,
+   "mom": []
+  },
+  {
+   "sheet": "MaggioGiugno",
+   "date": "2026-06-13",
+   "bianca": [
+    "Tyr",
+    "Parker",
+    "Xena",
+    "Sabo",
+    "Katana",
+    "Golem"
+   ],
+   "nera": [
+    "Brazo",
+    "Miles",
+    "Stout",
+    "Saiyan",
+    "Majin",
+    "Chill"
+   ],
+   "win_bianca": true,
+   "win_nera": false,
+   "mom": [
+    "Parker"
+   ]
+  },
+  {
+   "sheet": "MaggioGiugno",
+   "date": "2026-06-27",
+   "bianca": [
+    "Thor",
+    "Stout",
+    "Saiyan",
+    "Majin",
+    "Tyr",
+    "Kali"
+   ],
+   "nera": [
+    "Nike",
+    "Katana",
+    "Sabo"
+   ],
+   "win_bianca": false,
+   "win_nera": true,
+   "mom": []
+  },
+  {
+   "sheet": "MaggioGiugno",
+   "date": "2026-05-23",
+   "bianca": [
+    "Thor",
+    "Miles",
+    "Nike",
+    "Stout",
+    "Delta",
+    "Golem",
+    "Saiyan"
+   ],
+   "nera": [
+    "Hal",
+    "Tyr",
+    "Parker",
+    "Sabo",
+    "Paola",
+    "Matteo",
+    "Chill",
+    "Majin",
+    "Kali"
+   ],
+   "win_bianca": true,
+   "win_nera": false,
+   "mom": [
+    "Saiyan"
+   ]
+  }
+ ],
+ "extra_mom": [
+  {
+   "sheet": "Dicembre",
+   "name": "Tyr",
+   "date": "2025-12-20"
+  },
+  {
+   "sheet": "Dicembre",
+   "name": "Parker",
+   "date": "2025-12-20"
+  },
+  {
+   "sheet": "GennaioFebbraio",
+   "name": "Panzer",
+   "date": "2026-01-10"
+  },
+  {
+   "sheet": "GennaioFebbraio",
+   "name": "Brazo",
+   "date": "2026-01-31"
+  },
+  {
+   "sheet": "GennaioFebbraio",
+   "name": "Brazo",
+   "date": "2026-02-14"
+  },
+  {
+   "sheet": "MarzoAprile",
+   "name": "Thor",
+   "date": "2026-04-04"
+  },
+  {
+   "sheet": "MarzoAprile",
+   "name": "Thor",
+   "date": "2026-04-18"
+  },
+  {
+   "sheet": "MarzoAprile",
+   "name": "Brazo",
+   "date": "2026-04-18"
+  },
+  {
+   "sheet": "MaggioGiugno",
+   "name": "Thor",
+   "date": "2026-05-30"
+  },
+  {
+   "sheet": "MaggioGiugno",
+   "name": "Nike",
+   "date": "2026-05-30"
+  },
+  {
+   "sheet": "MaggioGiugno",
+   "name": "Majin",
+   "date": "2026-05-30"
+  },
+  {
+   "sheet": "MaggioGiugno",
+   "name": "Nike",
+   "date": "2026-06-29"
+  }
+ ]
+}
