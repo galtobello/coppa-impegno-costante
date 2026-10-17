@@ -1,6 +1,6 @@
 -- =====================================================================
 -- 0006 · Caratteristiche tecniche dei giocatori (radar a 5 assi, 0–5)
---  Lancio, Ricezione, Taglio, Difesa, Velocità e resistenza.
+--  Lancio, Ricezione, Taglio, Difesa, Velocità (+ Resistenza dalla 0007).
 --  Tutti leggono; solo admin e allenatori (coach) possono scrivere: il
 --  vincolo è nelle policy RLS, non solo nell'interfaccia. Idempotente.
 -- =====================================================================
@@ -11,7 +11,7 @@ create table if not exists public.player_skills (
   ricezione   smallint not null default 0 check (ricezione between 0 and 5),
   taglio      smallint not null default 0 check (taglio    between 0 and 5),
   difesa      smallint not null default 0 check (difesa    between 0 and 5),
-  velocita    smallint not null default 0 check (velocita  between 0 and 5),  -- velocità e resistenza
+  velocita    smallint not null default 0 check (velocita  between 0 and 5),
   updated_by  uuid default auth.uid(),
   updated_at  timestamptz not null default now()
 );

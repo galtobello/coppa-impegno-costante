@@ -259,7 +259,7 @@ async function viewMatch(id) {
 }
 
 // ============================================================== CARATTERISTICHE (radar 0–5)
-const SKILLS = [["lancio", ["Lancio"]], ["ricezione", ["Ricezione"]], ["taglio", ["Taglio"]], ["difesa", ["Difesa"]], ["velocita", ["Velocità e", "resistenza"]]];
+const SKILLS = [["lancio", ["Lancio"]], ["ricezione", ["Ricezione"]], ["taglio", ["Taglio"]], ["difesa", ["Difesa"]], ["velocita", ["Velocità"]], ["resistenza", ["Resistenza"]]];
 const canEditSkills = () => ["admin", "coach"].includes(S.me?.role);
 
 function radarSvg(v) {
@@ -270,13 +270,12 @@ function radarSvg(v) {
   const axes = SKILLS.map((_, i) => { const [x, y] = pt(i, R); return `<line class="r-axis" x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"/>`; }).join("");
   const val = (i) => (R * (Number(v[SKILLS[i][0]]) || 0)) / 5;
   const dots = SKILLS.map((_, i) => { const [x, y] = pt(i, val(i)); return `<circle class="r-dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4.5"/>`; }).join("");
-  // etichette vicine ai vertici: in alto, sopra i vertici laterali (verso l'esterno), sotto quelli inferiori
+  // etichette vicine ai vertici, sempre verso l'esterno: sopra quelli alti, sotto quelli bassi
   const labels = SKILLS.map(([k, lines], i) => {
     const [vx, vy] = pt(i, R);
-    let x = vx, y, anchor = "middle";
-    if (i === 0) y = vy - 14 - (lines.length - 1) * 18;
-    else if (vy < cy) { anchor = vx > cx ? "start" : "end"; x = vx + (vx > cx ? -6 : 6); y = vy - 14 - (lines.length - 1) * 18; }
-    else y = vy + 26;
+    let x = vx, anchor = "middle";
+    if (Math.abs(vx - cx) > 10) { anchor = vx > cx ? "start" : "end"; x = vx + (vx > cx ? -6 : 6); }
+    const y = vy < cy - 1 ? vy - 14 - (lines.length - 1) * 18 : vy + 26;
     const tl = lines.map((l, j) => `<tspan x="${x.toFixed(1)}" ${j ? 'dy="18"' : ""}>${esc(l)}${j === lines.length - 1 ? ` <tspan class="r-val">${Number(v[k]) || 0}</tspan>` : ""}</tspan>`).join("");
     return `<text class="r-label" text-anchor="${anchor}" x="${x.toFixed(1)}" y="${y.toFixed(1)}">${tl}</text>`;
   }).join("");

@@ -523,12 +523,15 @@ create table if not exists public.player_skills (
   ricezione   smallint not null default 0 check (ricezione between 0 and 5),
   taglio      smallint not null default 0 check (taglio    between 0 and 5),
   difesa      smallint not null default 0 check (difesa    between 0 and 5),
-  velocita    smallint not null default 0 check (velocita  between 0 and 5),  -- velocità e resistenza
+  velocita    smallint not null default 0 check (velocita  between 0 and 5),
   updated_by  uuid default auth.uid(),
   updated_at  timestamptz not null default now()
 );
 
 -- admin o allenatore (confronto su testo: vedi 0005)
+alter table public.player_skills
+  add column if not exists resistenza smallint not null default 0 check (resistenza between 0 and 5);  -- 0007
+
 create or replace function app.can_rate_skills()
 returns boolean language sql stable security definer set search_path = '' as $$
   select coalesce((select role::text in ('admin', 'coach') from public.profiles where id = (select auth.uid())), false);

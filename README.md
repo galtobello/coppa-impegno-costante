@@ -19,7 +19,7 @@ scripts/                  script di supporto e test (non servono per usare l'app
 
 ## Come funziona
 
-* **Pubblico (senza login)**: classifica Impegno Costante, Coppa Efficienza, classifica MVP, tabellini, profili giocatori (con il radar delle caratteristiche: Lancio, Ricezione, Taglio, Difesa, Velocità e resistenza, da 0 a 5, modificabile solo da organizzatori e allenatori), albo d'oro, regolamento.
+* **Pubblico (senza login)**: classifica Impegno Costante, Coppa Efficienza, classifica MVP, tabellini, profili giocatori (con il radar delle caratteristiche: Lancio, Ricezione, Taglio, Difesa, Velocità, Resistenza, da 0 a 5, modificabile solo da organizzatori e allenatori), albo d'oro, regolamento.
 * **Giocatore**: dopo una partita in cui ha giocato vota i compagni (1–10 + commento) per N giorni a partire dal giorno della partita (7 = fino al giorno prima della partita successiva: con le partite del venerdì si vota fino al giovedì). I voti sono anonimi: gli altri vedono solo media e commenti. Alla **chiusura delle votazioni** chi ha la media più alta (con almeno N voti; a pari media più giocatori) è l'**MVP** della partita e prende il punto "Man of the Match".
 * **Score keeper** e **Allenatore**: inseriscono e correggono i tabellini (squadra bianca/nera, vincente, punteggio), assegnano eventuali MoM manuali.
 * **Organizzatore (admin)**: tutto quanto sopra, più anagrafica giocatori, inviti/ruoli, stagioni e loro parametri, testi e albo d'oro.
@@ -34,7 +34,7 @@ La sicurezza è nel database (Row Level Security): anche chi manomette il sito n
 1. Vai su https://supabase.com, crea un account gratuito e un nuovo progetto (regione EU, scegli una password per il database e conservala).
 2. Nel menu laterale apri **SQL Editor** → *New query*, incolla il contenuto di `supabase/migrations/0001_schema.sql` e premi **Run**.
 3. Stessa cosa con `supabase/migrations/0002_seed.sql` (importa giocatori, stagione 2025/26, albo d'oro e regolamento).
-   Poi esegui, in ordine, anche `0003_match_score.sql` (punteggio facoltativo), `0004_storico_2023_24_q2.sql` (storico 2023/24, 2° quadrimestre) , `0005_coach_mvp_chiusura.sql` (ruolo allenatore, MVP alla chiusura del voto) e `0006_player_skills.sql` (radar delle caratteristiche).
+   Poi esegui, in ordine, anche `0003_match_score.sql` (punteggio facoltativo), `0004_storico_2023_24_q2.sql` (storico 2023/24, 2° quadrimestre) , `0005_coach_mvp_chiusura.sql` (ruolo allenatore, MVP alla chiusura del voto) `0006_player_skills.sql` (radar delle caratteristiche) e `0007_skills_resistenza.sql` (sesto asse: resistenza).
 4. **Authentication → Providers → Email**: lascia attivo Email. Consiglio per semplicità: disattiva *Confirm email* (così i giocatori entrano subito dopo la registrazione) oppure lascialo attivo se preferisci la verifica.
 5. **Authentication → URL Configuration**: in *Site URL* metti l'indirizzo del sito (dopo il passo 2 di GitHub Pages, es. `https://tuonome.github.io/coppa-impegno-costante/`) e aggiungilo anche a *Redirect URLs*. Serve per i link di accesso via email.
 6. **Project Settings → API**: copia *Project URL* e la chiave *anon public*.
