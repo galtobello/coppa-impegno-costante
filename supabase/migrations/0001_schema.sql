@@ -24,6 +24,7 @@ exception when duplicate_object then null; end $$;
 do $$ begin
   create type public.user_role as enum ('admin', 'scorekeeper', 'player');
 exception when duplicate_object then null; end $$;
+alter type public.user_role add value if not exists 'coach';   -- allenatore (0005)
 
 -- ---------------------------------------------------------------------
 -- Tabelle
@@ -226,17 +227,18 @@ $$;
 
 create or replace function app.can_score()
 returns boolean language sql stable security definer set search_path = '' as $$
-  select coalesce((select role in ('admin', 'scorekeeper') from public.profiles where id = (select auth.uid())), false);
+  select coalesce((select role::text in ('admin', 'scorekeeper', 'coach') from public.profiles where id = (select auth.uid())), false);
 $$;
 
--- Si può votare una partita dal giorno in cui è stata giocata fino a voting_days dopo
+-- Si vota dal giorno della partita per voting_days giorni (ora italiana)
 create or replace function app.voting_open(p_match_id uuid)
 returns boolean language sql stable security definer set search_path = '' as $$
   select exists (
     select 1 from public.matches m
     join public.seasons s on s.id = m.season_id
     where m.id = p_match_id
-      and current_date between m.played_on and m.played_on + s.voting_days
+      and (now() at time zone 'Europe/Rome')::date >= m.played_on
+      and (now() at time zone 'Europe/Rome')::date <  m.played_on + s.voting_days
   );
 $$;
 
@@ -326,12 +328,13 @@ select m.id, m.season_id, m.played_on, m.result, m.notes, m.created_at, m.update
        (select count(*) from public.match_players mp where mp.match_id = m.id and mp.team = 'nera')::int as n_nera,
        (m.result is not null
         and (select count(*) from public.match_players mp where mp.match_id = m.id) >= s.min_players_valid) as is_valid,
-       (current_date between m.played_on and m.played_on + s.voting_days) as voting_open,
+       ((now() at time zone 'Europe/Rome')::date >= m.played_on
+        and (now() at time zone 'Europe/Rome')::date < m.played_on + s.voting_days) as voting_open,
        m.score_bianca, m.score_nera
 from public.matches m
 join public.seasons s on s.id = m.season_id;
 
--- Media voti per giocatore in ogni partita (anonima) + flag MVP
+-- Media voti per giocatore in ogni partita (anonima) + flag MVP, solo a votazioni chiuse
 create or replace view public.v_match_ratings as
 with agg as (
   select r.match_id, r.rated_id as player_id,
@@ -344,7 +347,8 @@ ranked as (
   select a.*,
          max(a.avg_score) filter (where a.votes >= s.min_votes_mvp)
            over (partition by a.match_id) as best_score,
-         s.min_votes_mvp
+         s.min_votes_mvp,
+         (now() at time zone 'Europe/Rome')::date >= m.played_on + s.voting_days as voting_closed
   from agg a
   join public.matches m on m.id = a.match_id
   join public.seasons s on s.id = m.season_id
@@ -352,7 +356,7 @@ ranked as (
 select match_id, player_id,
        round(avg_score, 2) as avg_score,
        votes,
-       (votes >= min_votes_mvp and avg_score = best_score) as is_mvp
+       (voting_closed and votes >= min_votes_mvp and avg_score = best_score) as is_mvp
 from ranked;
 
 -- Commenti ricevuti (anonimi: senza chi li ha scritti)
@@ -511,6 +515,57 @@ create policy hof_admin on public.hall_of_fame for all to authenticated
 create policy settings_read  on public.settings for select to anon, authenticated using (true);
 create policy settings_admin on public.settings for all to authenticated
   using ((select app.is_admin())) with check ((select app.is_admin()));
+
+-- PLAYER_SKILLS (radar 0–5): tutti leggono, solo admin e allenatori scrivono (vedi 0006)
+create table if not exists public.player_skills (
+  player_id   uuid primary key references public.players (id) on delete cascade,
+  lancio      smallint not null default 0 check (lancio    between 0 and 5),
+  ricezione   smallint not null default 0 check (ricezione between 0 and 5),
+  taglio      smallint not null default 0 check (taglio    between 0 and 5),
+  difesa      smallint not null default 0 check (difesa    between 0 and 5),
+  velocita    smallint not null default 0 check (velocita  between 0 and 5),  -- velocità e resistenza
+  updated_by  uuid default auth.uid(),
+  updated_at  timestamptz not null default now()
+);
+
+-- admin o allenatore (confronto su testo: vedi 0005)
+create or replace function app.can_rate_skills()
+returns boolean language sql stable security definer set search_path = '' as $$
+  select coalesce((select role::text in ('admin', 'coach') from public.profiles where id = (select auth.uid())), false);
+$$;
+grant execute on function app.can_rate_skills() to anon, authenticated;
+
+-- chi ha modificato e quando: impostati dal server, non dal client
+create or replace function app.touch_player_skills()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  new.updated_at := now();
+  new.updated_by := auth.uid();
+  return new;
+end $$;
+create or replace trigger player_skills_touch before insert or update on public.player_skills
+  for each row execute function app.touch_player_skills();
+
+alter table public.player_skills enable row level security;
+-- create policy solo se mancano (niente drop: idempotente senza istruzioni distruttive)
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'player_skills' and policyname = 'skills_read') then
+    create policy skills_read on public.player_skills for select to anon, authenticated using (true);
+  end if;
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'player_skills' and policyname = 'skills_insert') then
+    create policy skills_insert on public.player_skills for insert to authenticated with check ((select app.can_rate_skills()));
+  end if;
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'player_skills' and policyname = 'skills_update') then
+    create policy skills_update on public.player_skills for update to authenticated
+      using ((select app.can_rate_skills())) with check ((select app.can_rate_skills()));
+  end if;
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'player_skills' and policyname = 'skills_delete') then
+    create policy skills_delete on public.player_skills for delete to authenticated using ((select app.can_rate_skills()));
+  end if;
+end $$;
+
+grant select on public.player_skills to anon, authenticated;
+grant insert, update, delete on public.player_skills to authenticated;
 
 -- Privilegi di base (Supabase li concede già per public; qui per completezza)
 grant usage on schema public to anon, authenticated;

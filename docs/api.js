@@ -120,6 +120,16 @@ export async function getPlayerMatches(playerId) {
   return matches.map((m) => ({ ...m, team: teamOf[m.id] })).sort((a, b) => b.played_on.localeCompare(a.played_on));
 }
 
+// caratteristiche tecniche (radar 0–5); null se il giocatore non è ancora stato valutato
+export async function getSkills(playerId) {
+  if (DEMO) return null;
+  const rows = unwrap(await sb.from("player_skills").select("*").eq("player_id", playerId));
+  return rows[0] || null;
+}
+export async function saveSkills(playerId, v) {
+  unwrap(await sb.from("player_skills").upsert({ player_id: playerId, ...v }, { onConflict: "player_id" }));
+}
+
 export async function getHallOfFame() {
   if (DEMO) return [...demo.hall_of_fame].sort((a, b) => b.sort_order - a.sort_order);
   return unwrap(await sb.from("hall_of_fame").select("*").order("sort_order", { ascending: false }));

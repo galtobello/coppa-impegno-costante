@@ -16,7 +16,10 @@ const nick = (id) => S.pmap.get(id)?.nickname || "?";
 const initials = (n) => n.slice(0, 2).toUpperCase();
 const avatar = (n, cls = "") => `<span class="avatar ${cls}">${esc(initials(n))}</span>`;
 const isAdmin = () => S.me?.role === "admin";
-const canScore = () => ["admin", "scorekeeper"].includes(S.me?.role);
+const canScore = () => ["admin", "scorekeeper", "coach"].includes(S.me?.role);
+const ROLE_LABEL = { admin: "Organizzatore", coach: "Allenatore", scorekeeper: "Score keeper", player: "Giocatore" };
+// ultimo giorno utile per votare (si vota per voting_days giorni a partire dal giorno della partita)
+const lastVoteDay = (m) => { const d = new Date(m.played_on + "T00:00:00"); d.setDate(d.getDate() + (S.seasons.find((s) => s.id === m.season_id)?.voting_days ?? 7) - 1); return d.toISOString().slice(0, 10); };
 const myPlayer = () => S.me?.player_id || null;
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -212,9 +215,9 @@ async function viewMatches() {
   const momBy = {};
   moms.forEach((m) => { if (m.match_id) (momBy[m.match_id] ||= []).push(m); });
   const cards = matches.map((m) => `<div class="card match-card" data-go="#/partita/${m.id}">
-      <div class="team ${m.result === "bianca" || m.result === "pareggio" ? "win" : ""}"><div class="tname">Bianca</div><div class="count">${hasScore(m) ? m.score_bianca : m.n_bianca}</div>${hasScore(m) ? `<div class="small muted">${m.n_bianca} gioc.</div>` : ""}</div>
+      <div class="team ${m.result === "bianca" || m.result === "pareggio" ? "win" : ""}"><div class="tname">Bianca</div><div class="count">${hasScore(m) ? m.score_bianca : "–"}</div></div>
       <div class="mid"><div class="date">${fmtDate(m.played_on)}</div><div class="small muted">${m.n_players} giocatori</div></div>
-      <div class="team ${m.result === "nera" || m.result === "pareggio" ? "win" : ""}"><div class="tname">Nera</div><div class="count">${hasScore(m) ? m.score_nera : m.n_nera}</div>${hasScore(m) ? `<div class="small muted">${m.n_nera} gioc.</div>` : ""}</div>
+      <div class="team ${m.result === "nera" || m.result === "pareggio" ? "win" : ""}"><div class="tname">Nera</div><div class="count">${hasScore(m) ? m.score_nera : "–"}</div></div>
       <div class="meta">${resultChip(m)}${m.is_valid ? "" : (m.result ? '<span class="chip bad">Non valida</span>' : "")}${m.voting_open ? '<span class="chip info">Voto aperto</span>' : ""}
         ${(momBy[m.id] || []).map((x) => `<span class="chip">${x.source === "mvp" ? "⭐ MVP" : "🏅 MoM"} ${esc(nick(x.player_id))}</span>`).join("")}</div>
     </div>`).join("");
@@ -232,41 +235,114 @@ async function viewMatch(id) {
   const [mps, ratings, comments, moms] = await Promise.all([api.getMatchPlayers([id]), api.getMatchRatings(id), api.getComments({ matchId: id }), api.getMomPoints(m.season_id)]);
   const rt = Object.fromEntries(ratings.map((r) => [r.player_id, r]));
   const momHere = moms.filter((x) => x.match_id === id);
+  const sea = S.seasons.find((s) => s.id === m.season_id);
+  const mvps = ratings.filter((r) => r.is_mvp);
   const me = myPlayer();
   const iPlayed = me && mps.some((p) => p.player_id === me);
   const col = (team) => {
     const list = mps.filter((p) => p.team === team).map((p) => ({ ...p, nickname: nick(p.player_id) })).sort((a, b) => a.nickname.localeCompare(b.nickname, "it"));
     const won = m.result === team || m.result === "pareggio";
-    return `<div class="col ${team} ${won ? "win" : ""}"><h3>Squadra ${team}<span>${list.length}</span></h3>
+    return `<div class="col ${team} ${won ? "win" : ""}"><h3>Squadra ${team}<span class="team-score">${hasScore(m) ? m["score_" + team] : "–"}</span></h3>
       ${list.map((p) => `<div class="pl" data-go="#/giocatore/${p.player_id}"><span>${avatar(p.nickname)} ${esc(p.nickname)}${rt[p.player_id]?.is_mvp ? ' <span class="mvp-badge">⭐ MVP</span>' : ""}${momHere.some((x) => x.player_id === p.player_id && x.source === "manuale") ? ' <span title="Man of the Match">🏅</span>' : ""}</span>
         ${rt[p.player_id] ? `<span class="score" title="${rt[p.player_id].votes} voti">${Number(rt[p.player_id].avg_score).toFixed(1)}</span>` : ""}</div>`).join("") || '<div class="muted small">Nessuno</div>'}</div>`;
   };
-  return `<div class="page-head"><div class="grow"><h3>Partita</h3><h1>${fmtDate(m.played_on)}</h1>${hasScore(m) ? `<div class="scoreline"><span>Bianca</span><b>${m.score_bianca} – ${m.score_nera}</b><span>Nera</span></div>` : ""}<div class="row">${resultChip(m)}${m.is_valid ? '<span class="chip ok">Valida</span>' : '<span class="chip bad">Non valida (' + m.n_players + ' giocatori)</span>'}${m.voting_open ? '<span class="chip info">Votazioni aperte</span>' : ""}</div></div>
+  return `<div class="page-head"><div class="grow"><h3>Partita</h3><h1>${fmtDate(m.played_on)}</h1>${hasScore(m) ? `<div class="scoreline"><span>Bianca</span><b>${m.score_bianca} – ${m.score_nera}</b><span>Nera</span></div>` : ""}<div class="row">${resultChip(m)}${m.is_valid ? '<span class="chip ok">Valida</span>' : '<span class="chip bad">Non valida (' + m.n_players + ' giocatori)</span>'}${m.voting_open ? `<span class="chip info">Voto aperto fino a ${fmtShort(lastVoteDay(m))}</span>` : ""}</div></div>
       <div class="row">${iPlayed && m.voting_open && !DEMO ? `<a class="btn primary" href="#/vota/${m.id}">⭐ Vota i compagni</a>` : ""}${canScore() ? `<a class="btn" href="#/tabellino/${m.id}">Modifica</a>` : ""}</div></div>
     <div class="roster">${col("bianca")}${col("nera")}</div>
     ${m.notes ? `<p class="muted">${esc(m.notes)}</p>` : ""}
     <div class="grid cols-2" style="margin-top:1rem">
-      <div class="card"><h2>Valutazioni</h2>${ratings.length ? `<p class="small muted">${ratings.reduce((a, r) => a + r.votes, 0)} voti espressi. L'MVP è chi ha la media più alta con almeno ${S.season.min_votes_mvp} voti${momHere.filter((x) => x.source === "mvp").length ? ": <b>" + momHere.filter((x) => x.source === "mvp").map((x) => esc(nick(x.player_id))).join(", ") + "</b>" : ""}.</p>
+      <div class="card"><h2>Valutazioni</h2>${ratings.length ? `<p class="small muted">${ratings.reduce((a, r) => a + r.votes, 0)} voti espressi. ${m.voting_open ? `Votazioni aperte fino a ${fmtDate(lastVoteDay(m))}: alla chiusura diventa MVP chi ha la media più alta (a pari media, più MVP).` : (mvps.length ? `MVP: <b>${mvps.map((r) => esc(nick(r.player_id))).join(", ")}</b>${m.is_valid ? "" : " (partita non valida: niente punto)"}.` : `Nessun MVP: serviva almeno ${sea.min_votes_mvp} voti.`)}</p>
         ${[...ratings].sort((a, b) => b.avg_score - a.avg_score).map((r) => `<div class="row" style="justify-content:space-between;padding:.3rem 0;border-bottom:1px solid var(--line)"><span>${r.is_mvp ? "⭐ " : ""}${esc(nick(r.player_id))}</span><span class="row" style="flex:0 0 55%"><div class="bar" style="flex:1"><i style="width:${r.avg_score * 10}%"></i></div><b>${Number(r.avg_score).toFixed(2)}</b><span class="small muted">(${r.votes})</span></span></div>`).join("")}`
-        : `<p class="muted">Ancora nessun voto${m.voting_open ? ": chi ha giocato può votare fino a " + S.season.voting_days + " giorni dopo la partita" : ""}.</p>`}</div>
+        : `<p class="muted">${m.voting_open ? `Ancora nessun voto: chi ha giocato può votare fino a ${fmtDate(lastVoteDay(m))}. Alla chiusura viene assegnato l'MVP.` : "Nessun voto."}</p>`}</div>
       <div class="card"><h2>Commenti</h2>${comments.length ? comments.map((c) => `<div class="comment"><div class="who">a ${esc(nick(c.player_id))} · voto ${c.score}</div>${esc(c.comment)}</div>`).join("") : '<p class="muted">Nessun commento.</p>'}</div>
     </div>`;
+}
+
+// ============================================================== CARATTERISTICHE (radar 0–5)
+const SKILLS = [["lancio", ["Lancio"]], ["ricezione", ["Ricezione"]], ["taglio", ["Taglio"]], ["difesa", ["Difesa"]], ["velocita", ["Velocità e", "resistenza"]]];
+const canEditSkills = () => ["admin", "coach"].includes(S.me?.role);
+
+function radarSvg(v) {
+  const cx = 200, cy = 170, R = 120, n = SKILLS.length;
+  const pt = (i, r) => { const a = (-90 + (360 / n) * i) * Math.PI / 180; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; };
+  const poly = (r) => SKILLS.map((_, i) => pt(i, typeof r === "function" ? r(i) : r).map((x) => x.toFixed(1)).join(",")).join(" ");
+  const rings = [1, 2, 3, 4, 5].map((k) => `<polygon class="r-ring${k === 5 ? " outer" : ""}" points="${poly((R * k) / 5)}"/>`).join("");
+  const axes = SKILLS.map((_, i) => { const [x, y] = pt(i, R); return `<line class="r-axis" x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"/>`; }).join("");
+  const val = (i) => (R * (Number(v[SKILLS[i][0]]) || 0)) / 5;
+  const dots = SKILLS.map((_, i) => { const [x, y] = pt(i, val(i)); return `<circle class="r-dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4.5"/>`; }).join("");
+  // etichette vicine ai vertici: in alto, sopra i vertici laterali (verso l'esterno), sotto quelli inferiori
+  const labels = SKILLS.map(([k, lines], i) => {
+    const [vx, vy] = pt(i, R);
+    let x = vx, y, anchor = "middle";
+    if (i === 0) y = vy - 14 - (lines.length - 1) * 18;
+    else if (vy < cy) { anchor = vx > cx ? "start" : "end"; x = vx + (vx > cx ? -6 : 6); y = vy - 14 - (lines.length - 1) * 18; }
+    else y = vy + 26;
+    const tl = lines.map((l, j) => `<tspan x="${x.toFixed(1)}" ${j ? 'dy="18"' : ""}>${esc(l)}${j === lines.length - 1 ? ` <tspan class="r-val">${Number(v[k]) || 0}</tspan>` : ""}</tspan>`).join("");
+    return `<text class="r-label" text-anchor="${anchor}" x="${x.toFixed(1)}" y="${y.toFixed(1)}">${tl}</text>`;
+  }).join("");
+  const desc = SKILLS.map(([k, l]) => `${l.join(" ")} ${Number(v[k]) || 0} su 5`).join(", ");
+  return `<svg class="radar" viewBox="0 0 400 340" role="img" aria-label="Caratteristiche: ${esc(desc)}">${rings}${axes}
+    <polygon class="r-area" points="${poly(val)}"/>${dots}${labels}</svg>`;
+}
+// adatta il viewBox al contenuto reale (etichette comprese): il radar usa tutta la larghezza disponibile
+function fitRadar() {
+  const svg = $("#radar svg"); if (!svg) return;
+  try { const b = svg.getBBox(), pad = 6; svg.setAttribute("viewBox", `${b.x - pad} ${b.y - pad} ${b.width + 2 * pad} ${b.height + 2 * pad}`); } catch {}
+}
+
+function skillsCard(playerId, skills) {
+  const v = Object.fromEntries(SKILLS.map(([k]) => [k, skills?.[k] ?? 0]));
+  const edit = canEditSkills() && !DEMO;
+  setTimeout(() => { fitRadar(); document.fonts?.ready.then(fitRadar); });
+  if (edit) setTimeout(() => {
+    const box = $("#skills"); if (!box) return;
+    box.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-sk]"); if (!b) return;
+      v[b.dataset.sk] = Number(b.dataset.v);
+      box.querySelectorAll(`[data-sk="${b.dataset.sk}"]`).forEach((x) => x.classList.toggle("active", x === b));
+      $("#radar").innerHTML = radarSvg(v); fitRadar(); $("#sk-save").disabled = false;
+    });
+    $("#sk-save").onclick = () => guard(async () => {
+      $("#sk-save").disabled = true;
+      try { await api.saveSkills(playerId, v); toast("Caratteristiche salvate"); }
+      catch (e) { $("#sk-save").disabled = false; throw e; }
+    });
+  });
+  return `<section class="card skills" id="skills"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Caratteristiche</h2>${skills ? "" : '<span class="chip">da valutare</span>'}</div>
+    <div class="skills-body"><div id="radar">${radarSvg(v)}</div>
+    ${edit ? `<div class="sk-edit"><p class="small muted" style="margin:.2rem 0 .4rem">Valori da 0 a 5, modificabili da organizzatori e allenatori.</p>
+      ${SKILLS.map(([k, l]) => `<div class="sk-row"><span class="sk-name">${esc(l.join(" "))}</span><div class="sk-seg" role="radiogroup" aria-label="${esc(l.join(" "))}">${[0, 1, 2, 3, 4, 5].map((n) => `<button type="button" data-sk="${k}" data-v="${n}" class="${v[k] === n ? "active" : ""}" aria-label="${n}">${n}</button>`).join("")}</div></div>`).join("")}
+      <button class="btn primary" id="sk-save" disabled style="margin-top:.8rem;width:100%">Salva caratteristiche</button></div>`
+    : (skills ? "" : '<p class="small muted" style="text-align:center;margin:0">Non ancora valutato dagli allenatori.</p>')}</div></section>`;
 }
 
 // ============================================================== GIOCATORI
 async function viewPlayers() {
   const rows = S.season ? await api.getStandings(S.season.id) : [];
   const st = Object.fromEntries(rows.map((r) => [r.player_id, r]));
-  const list = S.players.filter((p) => p.active).sort((a, b) => (st[b.id]?.points || 0) - (st[a.id]?.points || 0) || a.nickname.localeCompare(b.nickname, "it"));
+  // tutti i giocatori: quelli non attivi compaiono solo cercandoli
+  const list = [...S.players].sort((a, b) => (st[b.id]?.points || 0) - (st[a.id]?.points || 0) || a.nickname.localeCompare(b.nickname, "it"));
+  setTimeout(() => {
+    const q = $("#pl-q"), cards = [...document.querySelectorAll(".player-card")];
+    const apply = () => {
+      const t = q.value.trim().toLowerCase();
+      let n = 0;
+      cards.forEach((c) => { const show = t ? c.dataset.k.includes(t) : c.dataset.active === "1"; c.classList.toggle("hidden", !show); n += show; });
+      $("#pl-empty").classList.toggle("hidden", n > 0);
+    };
+    q.oninput = apply; apply();
+  });
   return `${demoBanner()}<div class="page-head"><div class="grow"><h3>Rosa</h3><h1>Giocatori</h1></div>${S.season ? seasonSelect() : ""}</div>
-    <div class="player-grid">${list.map((p) => { const r = st[p.id]; return `<div class="card player-card" data-go="#/giocatore/${p.id}">${avatar(p.nickname, "lg")}<div class="nick">${esc(p.nickname)}</div>
-      <div class="small muted">${r?.played ? `${r.points} pt · ${r.played} gg · ${Number(r.efficiency).toFixed(0)}%` : "Non ha ancora giocato"}</div></div>`; }).join("")}</div>`;
+    <input type="search" id="pl-q" class="search" placeholder="Cerca giocatore…" autocomplete="off" aria-label="Cerca giocatore" />
+    <div class="player-grid">${list.map((p) => { const r = st[p.id]; return `<div class="card player-card" data-go="#/giocatore/${p.id}" data-active="${p.active ? 1 : 0}" data-k="${esc((p.nickname + " " + (p.full_name || "")).toLowerCase())}">${avatar(p.nickname, "lg")}<div class="nick">${esc(p.nickname)}</div>
+      <div class="small muted">${r?.played ? `${r.points} pt · ${r.played} gg · ${Number(r.efficiency).toFixed(0)}%` : "Non ha ancora giocato"}${p.active ? "" : " · ex"}</div></div>`; }).join("")}</div>
+    <div id="pl-empty" class="empty hidden">Nessun giocatore trovato.</div>`;
 }
 
 async function viewPlayer(id) {
   const p = S.pmap.get(id);
   if (!p) return `<div class="empty">Giocatore non trovato.</div>`;
-  const [seasons, matches, comments] = await Promise.all([api.getPlayerSeasons(id), api.getPlayerMatches(id), api.getComments({ playerId: id })]);
+  const [seasons, matches, comments, skills] = await Promise.all([api.getPlayerSeasons(id), api.getPlayerMatches(id), api.getComments({ playerId: id }), api.getSkills(id).catch(() => null)]);
   const ratingsBySeason = {};
   for (const s of S.seasons) ratingsBySeason[s.id] = (await api.getSeasonRatings(s.id)).find((r) => r.player_id === id);
   const cur = seasons.find((s) => s.season_id === S.season?.id) || seasons[0];
@@ -274,6 +350,7 @@ async function viewPlayer(id) {
     .map((m) => `<i class="${!m.result || !m.is_valid ? "" : m.result === "pareggio" ? "n" : m.result === m.team ? "v" : "p"}" title="${fmtShort(m.played_on)}: ${m.result ? (m.result === "pareggio" ? "pareggio" : m.result === m.team ? "vittoria" : "sconfitta") : "da registrare"}${m.is_valid ? "" : " (non valida)"}"></i>`).join("");
   const rr = cur ? ratingsBySeason[cur.season_id] : null;
   return `<div class="page-head"><div class="grow row">${avatar(p.nickname, "lg")}<div><h3>Giocatore</h3><h1>${esc(p.nickname)}</h1>${p.full_name ? `<div class="muted">${esc(p.full_name)}</div>` : ""}</div></div></div>
+    ${skillsCard(id, skills)}
     ${cur ? `<div class="card"><h2>Stagione ${esc(cur.season_name)}</h2>
       <div class="stats"><div class="stat"><b>${cur.rank_points}°</b><span>posizione</span></div><div class="stat"><b>${cur.points}</b><span>punti</span></div><div class="stat"><b>${cur.played}</b><span>giocate</span></div>
         <div class="stat"><b>${cur.wins}</b><span>vinte</span></div><div class="stat"><b>${cur.losses}</b><span>perse</span></div><div class="stat"><b>${cur.mom}</b><span>MoM/MVP</span></div>
@@ -329,11 +406,11 @@ async function viewArea() {
   if (DEMO) return viewLogin();
   if (!S.user) { location.hash = "#/login"; return ""; }
   const me = S.me;
-  const roleLabel = { admin: "Organizzatore", scorekeeper: "Score keeper", player: "Giocatore" }[me?.role] || "–";
+  const roleLabel = ROLE_LABEL[me?.role] || "–";
   // partite votabili per il giocatore
   let votable = [];
-  if (myPlayer() && S.season) {
-    const ms = await api.getMatches(S.season.id);
+  if (myPlayer() && currentSeason()) {
+    const ms = await api.getMatches(currentSeason().id);
     const open = ms.filter((m) => m.voting_open);
     if (open.length) {
       const mps = await api.getMatchPlayers(open.map((m) => m.id));
@@ -354,8 +431,8 @@ async function viewArea() {
   return `<div class="page-head"><div class="grow row">${avatar(me?.nickname || S.user.email, "lg")}<div><h3>${roleLabel}</h3><h1>${esc(me?.nickname || S.user.email)}</h1><div class="small muted">${esc(S.user.email)}</div></div></div><button class="btn" id="btn-logout">Esci</button></div>
     ${!me?.player_id ? `<div class="card" style="margin-bottom:1rem"><h2>Account non collegato a un giocatore</h2><p class="muted">Chiedi all'organizzatore di associare la tua email (${esc(S.user.email)}) al tuo nickname: potrai votare i compagni dopo le partite.</p></div>` : ""}
     <div class="grid cols-2">
-      ${me?.player_id ? `<div class="card"><h2>⭐ Vota i compagni</h2>${votable.length ? votable.map((m) => `<div class="row" style="justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--line)"><span>${fmtDate(m.played_on)} <span class="small muted">${m.n_players} giocatori</span></span><a class="btn sm primary" href="#/vota/${m.id}">Vota</a></div>`).join("") : `<p class="muted">Nessuna partita con votazioni aperte in cui hai giocato. Le votazioni restano aperte ${S.season?.voting_days ?? 7} giorni dopo la partita.</p>`}</div>` : ""}
-      ${canScore() ? `<div class="card"><h2>📋 Tabellini</h2><p class="muted small">Registra la partita del sabato: squadre, vincente e, se serve, MoM assegnati a mano.</p><div class="row"><a class="btn primary" href="#/tabellino">+ Nuovo tabellino</a><a class="btn" href="#/partite">Elenco partite</a></div></div>` : ""}
+      ${me?.player_id ? `<div class="card"><h2>⭐ Vota i compagni</h2>${votable.length ? votable.map((m) => `<div class="row" style="justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--line)"><span>${fmtDate(m.played_on)} <span class="small muted">entro ${fmtShort(lastVoteDay(m))}</span></span><a class="btn sm primary" href="#/vota/${m.id}">Vota</a></div>`).join("") : `<p class="muted">Nessuna partita con votazioni aperte in cui hai giocato. Si vota per ${currentSeason()?.voting_days ?? 7} giorni a partire dal giorno della partita.</p>`}</div>` : ""}
+      ${canScore() ? `<div class="card"><h2>📋 Tabellini</h2><p class="muted small">Registra la partita del venerdì: squadre, vincente e, se serve, MoM assegnati a mano.</p><div class="row"><a class="btn primary" href="#/tabellino">+ Nuovo tabellino</a><a class="btn" href="#/partite">Elenco partite</a></div></div>` : ""}
     </div>
     ${isAdmin() ? `<div style="margin-top:1.5rem"><h2>Amministrazione</h2>
       <div class="tabs" id="area-tabs"><button data-t="none" class="active">—</button><button data-t="players">Giocatori</button><button data-t="users">Utenti e inviti</button><button data-t="seasons">Stagioni</button><button data-t="mom">MoM manuali</button><button data-t="texts">Testi e albo</button></div>
@@ -385,12 +462,12 @@ async function renderAdminPlayers() {
 async function renderAdminUsers() {
   const el = $("#adm-users"); if (!el) return;
   const [invites, profiles] = await Promise.all([api.getInvites(), api.getProfiles()]);
-  const roles = ["player", "scorekeeper", "admin"];
+  const roles = ["player", "coach", "scorekeeper", "admin"];
   const playerOpts = (sel) => `<option value="">— nessuno —</option>` + S.players.map((p) => `<option value="${p.id}" ${p.id === sel ? "selected" : ""}>${esc(p.nickname)}</option>`).join("");
-  const roleOpts = (sel) => roles.map((r) => `<option value="${r}" ${r === sel ? "selected" : ""}>${r}</option>`).join("");
+  const roleOpts = (sel) => roles.map((r) => `<option value="${r}" ${r === sel ? "selected" : ""}>${ROLE_LABEL[r]}</option>`).join("");
   el.innerHTML = `<h2>Inviti</h2><p class="small muted">Associa un'email a un giocatore e a un ruolo: quando quella persona si registra con la stessa email viene collegata automaticamente.</p>
     <form class="row" id="f-inv"><input type="email" name="email" placeholder="email" required style="max-width:240px" /><select name="player_id" style="max-width:180px">${playerOpts()}</select><select name="role" style="max-width:150px">${roleOpts("player")}</select><button class="btn primary">Aggiungi invito</button></form>
-    <div class="table-wrap" style="margin-top:.8rem;box-shadow:none"><table><thead><tr><th class="name">Email</th><th>Giocatore</th><th>Ruolo</th><th></th></tr></thead><tbody>${invites.map((i) => `<tr><td class="name">${esc(i.email)}</td><td>${esc(nick(i.player_id))}</td><td>${i.role}</td><td><button class="btn sm danger" data-del="${esc(i.email)}">Elimina</button></td></tr>`).join("") || '<tr><td colspan="4" class="muted">Nessun invito</td></tr>'}</tbody></table></div>
+    <div class="table-wrap" style="margin-top:.8rem;box-shadow:none"><table><thead><tr><th class="name">Email</th><th>Giocatore</th><th>Ruolo</th><th></th></tr></thead><tbody>${invites.map((i) => `<tr><td class="name">${esc(i.email)}</td><td>${esc(nick(i.player_id))}</td><td>${ROLE_LABEL[i.role] || i.role}</td><td><button class="btn sm danger" data-del="${esc(i.email)}">Elimina</button></td></tr>`).join("") || '<tr><td colspan="4" class="muted">Nessun invito</td></tr>'}</tbody></table></div>
     <h2 style="margin-top:1.5rem">Utenti registrati</h2>
     <div class="table-wrap" style="box-shadow:none"><table><thead><tr><th class="name">Email</th><th>Giocatore</th><th>Ruolo</th><th></th></tr></thead><tbody>${profiles.map((p) => `<tr data-id="${p.id}"><td class="name">${esc(p.email || "")}</td><td><select data-f="player_id" style="min-width:150px">${playerOpts(p.player_id)}</select></td><td><select data-f="role">${roleOpts(p.role)}</select></td><td><button class="btn sm" data-save>Salva</button></td></tr>`).join("")}</tbody></table></div>`;
   $("#f-inv").onsubmit = (e) => { e.preventDefault(); guard(async () => {
@@ -584,7 +661,7 @@ async function viewVote(matchId) {
   const [mps, mine] = await Promise.all([api.getMatchPlayers([matchId]), api.getMyRatings(matchId)]);
   const me = myPlayer();
   if (!mps.some((p) => p.player_id === me)) return `<div class="card"><h2>Non hai giocato questa partita</h2><p class="muted">Puoi votare solo le partite in cui sei stato in campo.</p></div>`;
-  if (!m.voting_open) return `<div class="card"><h2>Votazioni chiuse</h2><p class="muted">Si può votare fino a ${S.seasons.find((s) => s.id === m.season_id)?.voting_days} giorni dopo la partita.</p></div>`;
+  if (!m.voting_open) return `<div class="card"><h2>Votazioni chiuse</h2><p class="muted">Si poteva votare fino a ${fmtDate(lastVoteDay(m))}. L'MVP è stato assegnato a chi ha la media più alta.</p></div>`;
   const myTeam = mps.find((p) => p.player_id === me).team;
   const prev = Object.fromEntries(mine.map((r) => [r.rated_id, r]));
   const others = mps.filter((p) => p.player_id !== me).map((p) => ({ ...p, nickname: nick(p.player_id) })).sort((a, b) => (a.team === myTeam ? 0 : 1) - (b.team === myTeam ? 0 : 1) || a.nickname.localeCompare(b.nickname, "it"));

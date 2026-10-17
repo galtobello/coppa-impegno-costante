@@ -127,7 +127,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 1.25rem 16px 6rem; }
 .tabs { display: flex; gap: .3rem; padding: .25rem; background: var(--card-2); border-radius: 999px; border: 1px solid var(--line); width: max-content; max-width: 100%; overflow-x: auto; }
 .tabs button { border: 0; background: transparent; padding: .45rem .9rem; border-radius: 999px; cursor: pointer; font-weight: 600; color: var(--muted); white-space: nowrap; }
 .tabs button.active { background: var(--card); color: var(--text); box-shadow: var(--shadow); }
-select, input[type="text"], input[type="email"], input[type="password"], input[type="date"], input[type="number"], textarea {
+select, input[type="text"], input[type="email"], input[type="password"], input[type="date"], input[type="number"], input[type="search"], textarea {
   width: 100%; padding: .6rem .8rem; border-radius: 12px; border: 1px solid var(--line); background: var(--card-2); outline: none;
 }
 select:focus, input:focus, textarea:focus { border-color: var(--accent-2); }
@@ -316,8 +316,32 @@ tbody tr[data-go] { cursor: pointer; }
 @media (min-width: 820px) { .fab { display: none; } }
 @media (max-width: 819px) { .hide-sm { display: none !important; } }
 
+input.search { margin-bottom: 1rem; padding-left: 2.4rem; background: var(--card-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' fill='none' stroke='%23a9a596' stroke-width='2' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-4-4'/%3E%3C/svg%3E") .8rem center no-repeat; }
+.roster .col h3 .team-score { font-family: var(--font-display); font-weight: 400; font-size: 1.6rem; letter-spacing: 0; color: var(--text); }
+
+/* ---- radar caratteristiche ---- */
+.skills { margin-bottom: 1rem; }
+.skills-body { display: grid; gap: .5rem; align-items: center; }
+@media (min-width: 720px) { .skills-body:has(.sk-edit) { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 1.5rem; } }
+#radar { max-width: 440px; width: 100%; margin: 0 auto; }
+.radar { display: block; width: 100%; height: auto; overflow: visible; }
+.radar .r-ring { fill: none; stroke: color-mix(in srgb, var(--text) 14%, transparent); stroke-width: 1; }
+.radar .r-ring.outer { fill: color-mix(in srgb, var(--text) 4%, transparent); stroke: color-mix(in srgb, var(--text) 28%, transparent); }
+.radar .r-axis { stroke: color-mix(in srgb, var(--text) 18%, transparent); stroke-width: 1; }
+.radar .r-area { fill: color-mix(in srgb, var(--accent) 32%, transparent); stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; transition: all .2s; }
+.radar .r-dot { fill: var(--accent); stroke: var(--card); stroke-width: 2; }
+.radar .r-label { fill: var(--text); font-family: var(--font); font-size: 17px; font-weight: 700; }
+.radar .r-val { fill: var(--accent-2); font-weight: 800; }
+.sk-row { display: grid; grid-template-columns: 1fr; gap: .3rem; padding: .35rem 0; }
+.sk-name { font-weight: 700; font-size: .9rem; }
+.sk-seg { display: grid; grid-template-columns: repeat(6, 1fr); gap: .25rem; padding: .2rem; background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; }
+.sk-seg button { min-height: 40px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-weight: 800; font-size: 1rem; cursor: pointer; }
+.sk-seg button.active { background: var(--accent); color: var(--on-accent); }
+
 /* ===== smartphone ===== */
 @media (max-width: 600px) {
+  /* radar a tutta larghezza: la card perde i margini laterali di main */
+  .skills { margin-left: -6px; margin-right: -6px; padding-left: .5rem; padding-right: .5rem; }
   /* 16px evita lo zoom automatico di iOS sui campi */
   select, input[type="text"], input[type="email"], input[type="password"], input[type="date"], input[type="number"], input[type="search"], textarea { font-size: 16px; min-height: 44px; }
   main { padding-top: 1rem; }

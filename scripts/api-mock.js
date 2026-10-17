@@ -60,3 +60,8 @@ export async function updateProfile() {}
 export async function saveSetting(k, v) { const s = D.settings.find((x) => x.key === k); if (s) s.value = v; else D.settings.push({ key: k, value: v }); }
 export async function upsertHallOfFame(r) { if (r.id) Object.assign(D.hall_of_fame.find((x) => x.id === r.id), r); else D.hall_of_fame.push({ id: uid(), ...r }); }
 export async function deleteHallOfFame(id) { D.hall_of_fame = D.hall_of_fame.filter((x) => x.id !== id); }
+export async function getSkills(id) { return (D.skills ||= {})[id] || null; }
+export async function saveSkills(id, v) {
+  if (!["admin", "coach"].includes(role)) throw new Error("new row violates row-level security policy for table \"player_skills\"");
+  (D.skills ||= {})[id] = { player_id: id, ...v }; window.__skills = D.skills[id];
+}
