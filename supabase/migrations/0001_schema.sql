@@ -79,6 +79,9 @@ create table if not exists public.matches (
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
+-- punteggio facoltativo (vedi 0003_match_score.sql)
+alter table public.matches add column if not exists score_bianca smallint check (score_bianca is null or score_bianca >= 0);
+alter table public.matches add column if not exists score_nera   smallint check (score_nera   is null or score_nera   >= 0);
 create index if not exists matches_season_played_idx on public.matches (season_id, played_on desc);
 
 -- Chi ha giocato, in quale squadra
@@ -258,14 +261,17 @@ grant execute on function public.me() to authenticated;
 -- ---------------------------------------------------------------------
 -- RPC: salvataggio atomico di un tabellino (soggetto a RLS: security invoker)
 -- ---------------------------------------------------------------------
+drop function if exists public.save_match(uuid, date, public.match_result, uuid[], uuid[], text, uuid);
 create or replace function public.save_match(
-  p_season_id uuid,
-  p_played_on date,
-  p_result    public.match_result,
-  p_bianca    uuid[],
-  p_nera      uuid[],
-  p_notes     text default null,
-  p_match_id  uuid default null
+  p_season_id    uuid,
+  p_played_on    date,
+  p_result       public.match_result,
+  p_bianca       uuid[],
+  p_nera         uuid[],
+  p_notes        text default null,
+  p_match_id     uuid default null,
+  p_score_bianca smallint default null,
+  p_score_nera   smallint default null
 ) returns uuid
 language plpgsql security invoker set search_path = '' as $$
 declare
@@ -276,12 +282,13 @@ begin
   end if;
 
   if p_match_id is null then
-    insert into public.matches (season_id, played_on, result, notes, created_by)
-    values (p_season_id, p_played_on, p_result, p_notes, auth.uid())
+    insert into public.matches (season_id, played_on, result, notes, created_by, score_bianca, score_nera)
+    values (p_season_id, p_played_on, p_result, p_notes, auth.uid(), p_score_bianca, p_score_nera)
     returning id into v_id;
   else
     update public.matches
-       set season_id = p_season_id, played_on = p_played_on, result = p_result, notes = p_notes
+       set season_id = p_season_id, played_on = p_played_on, result = p_result, notes = p_notes,
+           score_bianca = p_score_bianca, score_nera = p_score_nera
      where id = p_match_id
      returning id into v_id;
     if v_id is null then
@@ -302,7 +309,7 @@ begin
 
   return v_id;
 end $$;
-grant execute on function public.save_match(uuid, date, public.match_result, uuid[], uuid[], text, uuid) to authenticated;
+grant execute on function public.save_match(uuid, date, public.match_result, uuid[], uuid[], text, uuid, smallint, smallint) to authenticated;
 
 -- ---------------------------------------------------------------------
 -- Viste di calcolo (sostituiscono le formule dell'Excel)
@@ -319,7 +326,8 @@ select m.id, m.season_id, m.played_on, m.result, m.notes, m.created_at, m.update
        (select count(*) from public.match_players mp where mp.match_id = m.id and mp.team = 'nera')::int as n_nera,
        (m.result is not null
         and (select count(*) from public.match_players mp where mp.match_id = m.id) >= s.min_players_valid) as is_valid,
-       (current_date between m.played_on and m.played_on + s.voting_days) as voting_open
+       (current_date between m.played_on and m.played_on + s.voting_days) as voting_open,
+       m.score_bianca, m.score_nera
 from public.matches m
 join public.seasons s on s.id = m.season_id;
 

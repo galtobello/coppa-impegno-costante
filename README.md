@@ -34,6 +34,7 @@ La sicurezza è nel database (Row Level Security): anche chi manomette il sito n
 1. Vai su https://supabase.com, crea un account gratuito e un nuovo progetto (regione EU, scegli una password per il database e conservala).
 2. Nel menu laterale apri **SQL Editor** → *New query*, incolla il contenuto di `supabase/migrations/0001_schema.sql` e premi **Run**.
 3. Stessa cosa con `supabase/migrations/0002_seed.sql` (importa giocatori, stagione 2025/26, albo d'oro e regolamento).
+   Poi esegui anche `supabase/migrations/0003_match_score.sql` (punteggio facoltativo delle partite).
 4. **Authentication → Providers → Email**: lascia attivo Email. Consiglio per semplicità: disattiva *Confirm email* (così i giocatori entrano subito dopo la registrazione) oppure lascialo attivo se preferisci la verifica.
 5. **Authentication → URL Configuration**: in *Site URL* metti l'indirizzo del sito (dopo il passo 2 di GitHub Pages, es. `https://tuonome.github.io/coppa-impegno-costante/`) e aggiungilo anche a *Redirect URLs*. Serve per i link di accesso via email.
 6. **Project Settings → API**: copia *Project URL* e la chiave *anon public*.
@@ -56,7 +57,7 @@ La chiave *anon* è fatta per stare nel sito pubblico: non dà nessun potere olt
 
 ## Flusso del sabato
 
-1. Lo score keeper apre *Area → Nuovo tabellino*: tocca i nomi (1 tocco = Bianca, 2 = Nera, 3 = rimuovi), sceglie la vincente, salva.
+1. Lo score keeper apre *Area → Nuovo tabellino* (stagione e data sono già quelle di oggi): sceglie in alto "Aggiungi a Bianca/Nera" e tocca i nomi, che compaiono subito nella tabella della squadra (× per toglierli). Imposta il risultato e, se vuole, il punteggio (il risultato si calcola da solo), poi salva.
 2. I giocatori che erano in campo ricevono in *Area* la partita da votare: slider 1–10 e commento facoltativo per ogni compagno (non per sé stessi; "Salta" per chi non si vuole valutare). Si può tornare a modificare finché le votazioni sono aperte.
 3. L'MVP, le classifiche e le medie si aggiornano da soli.
 

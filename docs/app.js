@@ -69,7 +69,7 @@ function renderNav() {
 }
 function markNav(hash) {
   const base = "#/" + (hash.split("/")[1] || "");
-  const alias = { "#/partita": "#/partite", "#/giocatore": "#/giocatori", "#/vota": "#/area", "#/tabellino": "#/area", "#/login": "#/area" };
+  const alias = { "#/storico": "#/", "#/partita": "#/partite", "#/giocatore": "#/giocatori", "#/vota": "#/area", "#/tabellino": "#/area", "#/login": "#/area" };
   const act = alias[base] || base;
   document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("active", a.dataset.h === act));
 }
@@ -84,6 +84,7 @@ function renderUserbox() {
 // ============================================================== router
 const routes = [
   [/^#\/?$/, viewStandings],
+  [/^#\/storico(?:\/([\w-]+))?$/, viewHistory],
   [/^#\/partite$/, viewMatches],
   [/^#\/partita\/([\w-]+)$/, viewMatch],
   [/^#\/giocatori$/, viewPlayers],
@@ -119,39 +120,69 @@ const seasonSelect = () => `<select data-season style="width:auto">${S.seasons.m
 const demoBanner = () => DEMO ? `<div class="demo-banner">Modalità demo: dati della stagione 2025/2026 importati dall'Excel, solo lettura. Collega Supabase in <code>config.js</code> per attivare login, tabellini e votazioni.</div>` : "";
 
 // ============================================================== CLASSIFICA
+const currentSeason = () => S.seasons.find((s) => s.is_current) || S.seasons[0];
+const pastSeasons = () => { const cur = currentSeason(); return S.seasons.filter((s) => s.id !== cur?.id); };
+
 async function viewStandings() {
-  if (!S.season) return `<div class="empty">Nessuna stagione configurata.</div>`;
-  const [rows, ratings] = await Promise.all([api.getStandings(S.season.id), api.getSeasonRatings(S.season.id)]);
-  const played = rows.filter((r) => r.played > 0);
-  const byPts = [...played].sort((a, b) => a.rank_points - b.rank_points);
-  const byEff = [...played].filter((r) => r.eligible_efficiency).sort((a, b) => a.rank_efficiency - b.rank_efficiency);
+  const s = currentSeason();
+  if (!s) return `<div class="empty">Nessuna stagione configurata.</div>`;
+  return `${demoBanner()}${standingsHead("current")}${await standingsBody(s, true)}`;
+}
+
+async function viewHistory(seasonId) {
+  const past = pastSeasons();
+  const s = past.find((x) => x.id === seasonId) || past[0];
+  if (!s) return `${standingsHead("history")}<div class="empty">Non ci sono ancora stagioni concluse.</div>`;
+  return `${demoBanner()}${standingsHead("history")}
+    <div class="season-pills">${past.map((x) => `<a class="pill ${x.id === s.id ? "active" : ""}" href="#/storico/${x.id}">${esc(x.name)}</a>`).join("")}</div>
+    ${await standingsBody(s, false)}`;
+}
+
+function standingsHead(active) {
+  const cur = currentSeason();
+  return `<div class="page-head"><div class="grow brand-head"><span class="logo" role="img" aria-label="Disc &amp; Disc"></span><div><h3>Classifica</h3><h1>Coppa Impegno Costante</h1></div></div></div>
+  <div class="tabs seg" role="tablist">
+    <a class="${active === "current" ? "active" : ""}" href="#/"><span class="dot-live"></span>In corso <small>${esc(cur?.name || "")}</small></a>
+    <a class="${active === "history" ? "active" : ""}" href="#/storico">Storico</a>
+  </div>`;
+}
+
+// Corpo classifica di una stagione. Per la stagione in corso mostra tutta la rosa attiva, anche a 0 punti.
+async function standingsBody(s, isCurrent) {
+  const [rows, ratings] = await Promise.all([api.getStandings(s.id), api.getSeasonRatings(s.id)]);
+  const activeIds = new Set(S.players.filter((p) => p.active).map((p) => p.id));
+  const shown = rows.filter((r) => r.played > 0 || r.mom > 0 || (isCurrent && activeIds.has(r.player_id)));
+  // posizioni ricalcolate sui soli giocatori mostrati (pari punti = pari posizione)
+  const byPts = [...shown].sort((a, b) => b.points - a.points || b.wins - a.wins || b.played - a.played || a.nickname.localeCompare(b.nickname, "it"));
+  byPts.forEach((r, i) => { const p = byPts[i - 1]; r.pos = p && p.points === r.points && p.wins === r.wins && p.played === r.played ? p.pos : i + 1; });
+  const byEff = shown.filter((r) => r.played > 0 && r.eligible_efficiency).sort((a, b) => a.rank_efficiency - b.rank_efficiency);
   const byMvp = ratings.map((r) => ({ ...r, nickname: nick(r.player_id) })).sort((a, b) => b.avg_score - a.avg_score || b.votes - a.votes);
-  const s = S.season;
   const me = myPlayer();
+  const anyPlayed = shown.some((r) => r.played > 0);
 
   const podium = (list, key, suffix) => {
     const top = list.slice(0, 3);
-    if (top.length < 3) return "";
+    if (top.length < 3 || !top.every((r) => Number(r[key]) > 0)) return "";
     const medal = ["🥇", "🥈", "🥉"];
     return `<div class="podium">${top.map((r, i) => `<div class="step p${i + 1}" data-go="#/giocatore/${r.player_id}">
       <div class="medal">${medal[i]}</div>${avatar(r.nickname)}<div class="name">${esc(r.nickname)}</div>
       <div class="pts">${r[key]}${suffix}</div><div class="sub">${r.played} partite</div></div>`).join("")}</div>`;
   };
 
-  const tablePts = `<div class="table-wrap"><table><thead><tr>
-    <th>#</th><th class="name">Giocatore</th><th>G</th><th>V</th><th>N</th><th>P</th><th title="Man of the Match / MVP">MoM</th><th>Eff.</th><th>Punti</th></tr></thead><tbody>
-    ${byPts.map((r) => `<tr class="${r.player_id === me ? "me" : ""} ${r.eligible_ranking ? "" : "ineligible"}" data-go="#/giocatore/${r.player_id}" title="${r.eligible_ranking ? "" : `Servono almeno ${s.min_matches_ranking} partite per vincere la coppa`}">
-      <td class="rank">${r.rank_points}</td><td class="name">${esc(r.nickname)}${r.eligible_ranking ? "" : ' <span class="chip warn" style="font-size:.65rem">&lt;' + s.min_matches_ranking + ' gg</span>'}</td>
-      <td>${r.played}</td><td>${r.wins}</td><td>${r.draws}</td><td>${r.losses}</td><td>${r.mom}</td><td>${Number(r.efficiency).toFixed(0)}%</td><td class="pts">${r.points}</td></tr>`).join("")}
-    </tbody></table></div>`;
+  const tablePts = byPts.length ? `<div class="table-wrap"><table class="standings"><thead><tr>
+    <th>#</th><th class="name">Giocatore</th><th>G</th><th>V</th><th class="opt">N</th><th class="opt">P</th><th title="Man of the Match / MVP">MoM</th><th class="opt">Eff.</th><th>Punti</th></tr></thead><tbody>
+    ${byPts.map((r) => `<tr class="${r.player_id === me ? "me" : ""} ${r.eligible_ranking || r.played === 0 ? "" : "ineligible"} ${r.played === 0 ? "zero" : ""}" data-go="#/giocatore/${r.player_id}" title="${r.eligible_ranking ? "" : `Servono almeno ${s.min_matches_ranking} partite per vincere la coppa`}">
+      <td class="rank">${r.played === 0 && r.points === 0 ? "–" : r.pos}</td><td class="name">${esc(r.nickname)}${r.eligible_ranking || r.played === 0 ? "" : ' <span class="chip warn mini">&lt;' + s.min_matches_ranking + ' gg</span>'}</td>
+      <td>${r.played}</td><td>${r.wins}</td><td class="opt">${r.draws}</td><td class="opt">${r.losses}</td><td>${r.mom}</td><td class="opt">${Number(r.efficiency).toFixed(0)}%</td><td class="pts">${r.points}</td></tr>`).join("")}
+    </tbody></table></div>` : `<div class="empty">Nessun giocatore in classifica.</div>`;
 
   const tableEff = byEff.length ? `<div class="table-wrap"><table><thead><tr><th>#</th><th class="name">Giocatore</th><th>G</th><th>V</th><th style="text-align:left">Efficienza</th></tr></thead><tbody>
     ${byEff.map((r, i) => `<tr class="${r.player_id === me ? "me" : ""}" data-go="#/giocatore/${r.player_id}"><td class="rank">${i + 1}</td><td class="name">${esc(r.nickname)}</td><td>${r.played}</td><td>${r.wins}</td>
-      <td><div class="row" style="flex-wrap:nowrap"><div class="bar" style="flex:1"><i style="width:${r.efficiency}%"></i></div><b>${Number(r.efficiency).toFixed(2)}%</b></div></td></tr>`).join("")}
+      <td><div class="row" style="flex-wrap:nowrap"><div class="bar" style="flex:1"><i style="width:${r.efficiency}%"></i></div><b>${Number(r.efficiency).toFixed(0)}%</b></div></td></tr>`).join("")}
     </tbody></table></div><p class="small muted">Servono almeno ${s.min_matches_efficiency} partite giocate.</p>` : `<div class="empty">Nessun giocatore ha ancora raggiunto ${s.min_matches_efficiency} partite.</div>`;
 
-  const tableMvp = byMvp.length ? `<div class="table-wrap"><table><thead><tr><th>#</th><th class="name">Giocatore</th><th>Media</th><th>Voti</th><th>Partite votate</th><th>MVP</th></tr></thead><tbody>
-    ${byMvp.map((r, i) => `<tr class="${r.player_id === me ? "me" : ""}" data-go="#/giocatore/${r.player_id}"><td class="rank">${i + 1}</td><td class="name">${esc(r.nickname)}</td><td class="pts">${Number(r.avg_score).toFixed(2)}</td><td>${r.votes}</td><td>${r.rated_matches}</td><td>${r.mvp_count ? "⭐ " + r.mvp_count : "–"}</td></tr>`).join("")}
+  const tableMvp = byMvp.length ? `<div class="table-wrap"><table><thead><tr><th>#</th><th class="name">Giocatore</th><th>Media</th><th>Voti</th><th class="opt">Partite votate</th><th>MVP</th></tr></thead><tbody>
+    ${byMvp.map((r, i) => `<tr class="${r.player_id === me ? "me" : ""}" data-go="#/giocatore/${r.player_id}"><td class="rank">${i + 1}</td><td class="name">${esc(r.nickname)}</td><td class="pts">${Number(r.avg_score).toFixed(2)}</td><td>${r.votes}</td><td class="opt">${r.rated_matches}</td><td>${r.mvp_count ? "⭐ " + r.mvp_count : "–"}</td></tr>`).join("")}
     </tbody></table></div>` : `<div class="empty">Ancora nessuna votazione in questa stagione. Dopo ogni partita i giocatori in campo votano i compagni: chi ha la media più alta è l'MVP.</div>`;
 
   setTimeout(() => {
@@ -161,14 +192,11 @@ async function viewStandings() {
       root.querySelectorAll("[data-tab]").forEach((sec) => sec.classList.toggle("hidden", sec.dataset.tab !== b.dataset.t));
     });
   });
-  return `${demoBanner()}
-  <div class="page-head"><div class="grow brand-head"><span class="logo" role="img" aria-label="Disc &amp; Disc"></span><div><h3>Classifica</h3><h1>Coppa Impegno Costante</h1></div></div>${seasonSelect()}</div>
-  <div class="tabs" id="tabs"><button class="active" data-t="pts">🏆 Impegno Costante</button><button data-t="eff">⚡ Coppa Efficienza</button><button data-t="mvp">⭐ MVP</button></div>
-  <section data-tab="pts" style="margin-top:1rem">${podium(byPts.filter((r) => r.eligible_ranking), "points", " pt")}${byPts.length ? tablePts : '<div class="empty">Nessuna partita ancora giocata in questa stagione.</div>'}
+  return `<div class="tabs sub" id="tabs"><button class="active" data-t="pts">🏆 Impegno</button><button data-t="eff">⚡ Efficienza</button><button data-t="mvp">⭐ MVP</button></div>
+  <section data-tab="pts">${podium(byPts.filter((r) => r.eligible_ranking), "points", " pt")}${isCurrent && !anyPlayed ? '<p class="small muted">Nessuna partita ancora giocata: tutti partono da 0.</p>' : ""}${tablePts}
     <p class="small muted">G = giocate · V/N/P = vinte/pareggiate/perse · ${s.points_win} punti a vittoria, ${s.points_draw} a pareggio, ${s.points_mom} per MoM/MVP${s.min_players_valid > 0 ? ` · valgono le partite con almeno ${s.min_players_valid} giocatori` : ""}.</p></section>
-  <section data-tab="eff" class="hidden" style="margin-top:1rem">${podium(byEff, "efficiency", "%")}${tableEff}</section>
-  <section data-tab="mvp" class="hidden" style="margin-top:1rem">${podium(byMvp, "avg_score", "")}${tableMvp}</section>
-  `;
+  <section data-tab="eff" class="hidden">${podium(byEff, "efficiency", "%")}${tableEff}</section>
+  <section data-tab="mvp" class="hidden">${podium(byMvp, "avg_score", "")}${tableMvp}</section>`;
 }
 
 // ============================================================== PARTITE
@@ -177,19 +205,20 @@ function resultChip(m) {
   if (m.result === "pareggio") return `<span class="chip info">Pareggio</span>`;
   return `<span class="chip ok">Vince ${m.result === "bianca" ? "Bianca" : "Nera"}</span>`;
 }
+const hasScore = (m) => m.score_bianca != null && m.score_nera != null;
 async function viewMatches() {
   if (!S.season) return `<div class="empty">Nessuna stagione.</div>`;
   const [matches, moms] = await Promise.all([api.getMatches(S.season.id), api.getMomPoints(S.season.id)]);
   const momBy = {};
   moms.forEach((m) => { if (m.match_id) (momBy[m.match_id] ||= []).push(m); });
   const cards = matches.map((m) => `<div class="card match-card" data-go="#/partita/${m.id}">
-      <div class="team ${m.result === "bianca" || m.result === "pareggio" ? "win" : ""}"><div class="tname">Bianca</div><div class="count">${m.n_bianca}</div></div>
+      <div class="team ${m.result === "bianca" || m.result === "pareggio" ? "win" : ""}"><div class="tname">Bianca</div><div class="count">${hasScore(m) ? m.score_bianca : m.n_bianca}</div>${hasScore(m) ? `<div class="small muted">${m.n_bianca} gioc.</div>` : ""}</div>
       <div class="mid"><div class="date">${fmtDate(m.played_on)}</div><div class="small muted">${m.n_players} giocatori</div></div>
-      <div class="team ${m.result === "nera" || m.result === "pareggio" ? "win" : ""}"><div class="tname">Nera</div><div class="count">${m.n_nera}</div></div>
+      <div class="team ${m.result === "nera" || m.result === "pareggio" ? "win" : ""}"><div class="tname">Nera</div><div class="count">${hasScore(m) ? m.score_nera : m.n_nera}</div>${hasScore(m) ? `<div class="small muted">${m.n_nera} gioc.</div>` : ""}</div>
       <div class="meta">${resultChip(m)}${m.is_valid ? "" : (m.result ? '<span class="chip bad">Non valida</span>' : "")}${m.voting_open ? '<span class="chip info">Voto aperto</span>' : ""}
         ${(momBy[m.id] || []).map((x) => `<span class="chip">${x.source === "mvp" ? "⭐ MVP" : "🏅 MoM"} ${esc(nick(x.player_id))}</span>`).join("")}</div>
     </div>`).join("");
-  return `${demoBanner()}<div class="page-head"><div class="grow"><h3>Partite</h3><h1>Tabellini</h1></div>${seasonSelect()}${canScore() ? '<a class="btn primary" href="#/tabellino">+ Nuovo tabellino</a>' : ""}</div>
+  return `${demoBanner()}<div class="page-head"><div class="grow"><h3>Partite</h3><h1>Tabellini</h1></div>${seasonSelect()}${canScore() ? '<a class="btn primary hide-sm" href="#/tabellino">+ Nuovo tabellino</a>' : ""}</div>${canScore() ? '<a class="fab" href="#/tabellino" aria-label="Nuovo tabellino">+</a>' : ""}
     ${matches.length ? `<div class="grid cols-2">${cards}</div>` : `<div class="empty">Nessuna partita ancora registrata.</div>`}`;
 }
 
@@ -212,7 +241,7 @@ async function viewMatch(id) {
       ${list.map((p) => `<div class="pl" data-go="#/giocatore/${p.player_id}"><span>${avatar(p.nickname)} ${esc(p.nickname)}${rt[p.player_id]?.is_mvp ? ' <span class="mvp-badge">⭐ MVP</span>' : ""}${momHere.some((x) => x.player_id === p.player_id && x.source === "manuale") ? ' <span title="Man of the Match">🏅</span>' : ""}</span>
         ${rt[p.player_id] ? `<span class="score" title="${rt[p.player_id].votes} voti">${Number(rt[p.player_id].avg_score).toFixed(1)}</span>` : ""}</div>`).join("") || '<div class="muted small">Nessuno</div>'}</div>`;
   };
-  return `<div class="page-head"><div class="grow"><h3>Partita</h3><h1>${fmtDate(m.played_on)}</h1><div class="row">${resultChip(m)}${m.is_valid ? '<span class="chip ok">Valida</span>' : '<span class="chip bad">Non valida (' + m.n_players + ' giocatori)</span>'}${m.voting_open ? '<span class="chip info">Votazioni aperte</span>' : ""}</div></div>
+  return `<div class="page-head"><div class="grow"><h3>Partita</h3><h1>${fmtDate(m.played_on)}</h1>${hasScore(m) ? `<div class="scoreline"><span>Bianca</span><b>${m.score_bianca} – ${m.score_nera}</b><span>Nera</span></div>` : ""}<div class="row">${resultChip(m)}${m.is_valid ? '<span class="chip ok">Valida</span>' : '<span class="chip bad">Non valida (' + m.n_players + ' giocatori)</span>'}${m.voting_open ? '<span class="chip info">Votazioni aperte</span>' : ""}</div></div>
       <div class="row">${iPlayed && m.voting_open && !DEMO ? `<a class="btn primary" href="#/vota/${m.id}">⭐ Vota i compagni</a>` : ""}${canScore() ? `<a class="btn" href="#/tabellino/${m.id}">Modifica</a>` : ""}</div></div>
     <div class="roster">${col("bianca")}${col("nera")}</div>
     ${m.notes ? `<p class="muted">${esc(m.notes)}</p>` : ""}
@@ -434,39 +463,116 @@ async function renderAdminTexts() {
 // ============================================================== TABELLINO (score keeper)
 async function viewScoreForm(id) {
   if (!canScore()) { location.hash = "#/login"; return ""; }
-  let m = null, assign = {};
+  let m = null;
+  const assign = {};                       // player_id -> "bianca" | "nera"
   if (id) {
     for (const s of S.seasons) { const ms = await api.getMatches(s.id); m = ms.find((x) => x.id === id); if (m) break; }
     if (!m) return `<div class="empty">Partita non trovata.</div>`;
     (await api.getMatchPlayers([id])).forEach((p) => assign[p.player_id] = p.team);
   }
-  const seasonId = m?.season_id || S.season.id;
+  const seasonId = m?.season_id || currentSeason()?.id;
   const players = S.players.filter((p) => p.active || assign[p.id]);
+  let target = "bianca";                   // squadra a cui si aggiungono i giocatori toccati
+  let result = m?.result || "";
+  const TEAM = { bianca: "Bianca", nera: "Nera" };
+
+  const minPlayers = () => S.seasons.find((s) => s.id === $("#f-match")?.season_id.value)?.min_players_valid || 0;
+  const listOf = (t) => players.filter((p) => assign[p.id] === t).sort((a, b) => a.nickname.localeCompare(b.nickname, "it"));
+
   const render = () => {
-    const nb = Object.values(assign).filter((t) => t === "bianca").length, nn = Object.values(assign).filter((t) => t === "nera").length;
-    $("#cnt").innerHTML = `<span class="chip" style="background:var(--bianca);color:var(--brand-ink)">Bianca ${nb}</span> <span class="chip" style="background:var(--nera);color:#fff">Nera ${nn}</span> <span class="chip ${nb + nn >= (S.seasons.find((s) => s.id === seasonId)?.min_players_valid || 0) ? "ok" : "warn"}">${nb + nn} totali</span>`;
-    document.querySelectorAll(".pick").forEach((b) => { b.className = "pick " + (assign[b.dataset.id] || ""); });
+    for (const t of ["bianca", "nera"]) {
+      const list = listOf(t);
+      $(`#board-${t} .n`).textContent = list.length;
+      $(`#board-${t} .list`).innerHTML = list.map((p) => `<button type="button" class="tag" data-rm="${p.id}" aria-label="Togli ${esc(p.nickname)}">${esc(p.nickname)}<span aria-hidden="true">×</span></button>`).join("")
+        || `<span class="muted small">Tocca i giocatori qui sotto</span>`;
+      $(`#board-${t}`).classList.toggle("target", t === target);
+      $(`#seg-${t}`).classList.toggle("active", t === target);
+    }
+    const q = $("#pool-q").value.trim().toLowerCase();
+    const free = players.filter((p) => !assign[p.id] && (!q || p.nickname.toLowerCase().includes(q)));
+    $("#pool").innerHTML = free.map((p) => `<button type="button" class="pick" data-add="${p.id}">${esc(p.nickname)}</button>`).join("")
+      || `<span class="muted small">${q ? "Nessun giocatore trovato" : "Tutti i giocatori sono in squadra"}</span>`;
+    $("#pool-to").textContent = TEAM[target];
+    $("#pool-to").className = "chip team-" + target;
+    const nb = listOf("bianca").length, nn = listOf("nera").length, min = minPlayers();
+    $("#sum").innerHTML = `<b>${nb}</b> vs <b>${nn}</b> · <span class="${nb + nn >= min ? "ok" : "warn"}">${nb + nn}${min ? "/" + min : ""} giocatori</span>`;
+    document.querySelectorAll("#res-seg button").forEach((b) => b.classList.toggle("active", b.dataset.r === result));
   };
+
+  // punteggio → risultato automatico (si può sempre cambiare a mano)
+  const syncResultFromScore = () => {
+    const a = $("#sc-b").value, b = $("#sc-n").value;
+    if (a === "" || b === "") return;
+    result = +a > +b ? "bianca" : +a < +b ? "nera" : "pareggio";
+  };
+
   setTimeout(() => {
-    document.querySelectorAll(".pick").forEach((b) => b.onclick = () => { const t = assign[b.dataset.id]; if (!t) assign[b.dataset.id] = "bianca"; else if (t === "bianca") assign[b.dataset.id] = "nera"; else delete assign[b.dataset.id]; render(); });
+    const f = $("#f-match");
+    f.addEventListener("click", (e) => {
+      const add = e.target.closest("[data-add]"), rm = e.target.closest("[data-rm]"), seg = e.target.closest("[data-target]"), res = e.target.closest("[data-r]"), step = e.target.closest("[data-step]");
+      if (add) { assign[add.dataset.add] = target; if (navigator.vibrate) navigator.vibrate(8); render(); $("#pool-q").value && ($("#pool-q").value = "", render()); }
+      else if (rm) { delete assign[rm.dataset.rm]; render(); }
+      else if (seg) { target = seg.dataset.target; render(); }
+      else if (res) { result = res.dataset.r; render(); }
+      else if (step) { const inp = $("#" + step.dataset.for); inp.value = Math.max(0, (+inp.value || 0) + +step.dataset.step); syncResultFromScore(); render(); }
+    });
+    $("#pool-q").oninput = render;
+    f.season_id.onchange = render;
+    ["#sc-b", "#sc-n"].forEach((s) => $(s).oninput = () => { syncResultFromScore(); render(); });
     render();
-    $("#f-match").onsubmit = (e) => { e.preventDefault(); guard(async () => {
-      const f = e.target;
-      const bianca = Object.entries(assign).filter(([, t]) => t === "bianca").map(([k]) => k), nera = Object.entries(assign).filter(([, t]) => t === "nera").map(([k]) => k);
+    f.onsubmit = (e) => { e.preventDefault(); guard(async () => {
+      const bianca = listOf("bianca").map((p) => p.id), nera = listOf("nera").map((p) => p.id);
       if (!bianca.length || !nera.length) throw new Error("Servono giocatori in entrambe le squadre");
-      const newId = await api.saveMatch({ id: m?.id, seasonId: f.season_id.value, playedOn: f.played_on.value, result: f.result.value || null, bianca, nera, notes: f.notes.value });
-      toast("Tabellino salvato"); location.hash = "#/partita/" + newId; }); };
+      const sb = $("#sc-b").value, sn = $("#sc-n").value;
+      if ((sb === "") !== (sn === "")) throw new Error("Inserisci il punteggio di entrambe le squadre (o lasciali vuoti)");
+      const btn = $("#btn-save"); btn.disabled = true;
+      try {
+        const newId = await api.saveMatch({ id: m?.id, seasonId: f.season_id.value, playedOn: f.played_on.value, result: result || null, bianca, nera, notes: f.notes.value,
+          scoreBianca: sb === "" ? null : +sb, scoreNera: sn === "" ? null : +sn });
+        toast("Tabellino salvato"); location.hash = "#/partita/" + newId;
+      } finally { btn.disabled = false; }
+    }); };
     const del = $("#btn-del"); if (del) del.onclick = () => { if (confirm("Eliminare definitivamente questa partita (e i voti collegati)?")) guard(async () => { await api.deleteMatch(m.id); toast("Partita eliminata"); location.hash = "#/partite"; }); };
   });
+
+  const scoreBox = (t, v) => `<div class="score-in team-${t}"><span class="lbl">${TEAM[t]}</span>
+      <div class="stepper"><button type="button" data-step="-1" data-for="sc-${t[0]}" aria-label="meno">−</button><input id="sc-${t[0]}" type="number" inputmode="numeric" min="0" max="99" placeholder="–" value="${v ?? ""}" /><button type="button" data-step="1" data-for="sc-${t[0]}" aria-label="più">+</button></div></div>`;
+
   return `<div class="page-head"><div class="grow"><h3>Tabellino</h3><h1>${m ? "Modifica partita" : "Nuova partita"}</h1></div></div>
-    <form id="f-match" class="card"><div class="grid cols-3"><div><label>Stagione</label><select name="season_id">${S.seasons.map((s) => `<option value="${s.id}" ${s.id === seasonId ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select></div>
-      <div><label>Data</label><input type="date" name="played_on" value="${m?.played_on || today()}" required /></div>
-      <div><label>Risultato</label><select name="result"><option value="">— da definire —</option><option value="bianca" ${m?.result === "bianca" ? "selected" : ""}>Vince Bianca</option><option value="nera" ${m?.result === "nera" ? "selected" : ""}>Vince Nera</option><option value="pareggio" ${m?.result === "pareggio" ? "selected" : ""}>Pareggio</option></select></div></div>
-      <label>Giocatori <span class="muted">(tocca: 1ª volta Bianca, 2ª Nera, 3ª rimuovi)</span></label><div id="cnt" style="margin-bottom:.5rem"></div>
-      <div class="pick-grid">${players.map((p) => `<button type="button" class="pick" data-id="${p.id}">${esc(p.nickname)}</button>`).join("")}</div>
+  <form id="f-match" class="score-form">
+    <div class="card">
+      <div class="grid cols-2 tight">
+        <div><label>Stagione</label><select name="season_id">${S.seasons.map((s) => `<option value="${s.id}" ${s.id === seasonId ? "selected" : ""}>${esc(s.name)}${s.is_current ? " · in corso" : ""}</option>`).join("")}</select></div>
+        <div><label>Data</label><input type="date" name="played_on" value="${m?.played_on || today()}" required /></div>
+      </div>
+      <label>Risultato</label>
+      <div class="seg3" id="res-seg"><button type="button" data-r="bianca">Vince Bianca</button><button type="button" data-r="pareggio">Pareggio</button><button type="button" data-r="nera">Vince Nera</button></div>
+      <button type="button" class="linklike small" data-r="">Risultato da definire</button>
+      <label>Punteggio <span class="muted">(facoltativo)</span></label>
+      <div class="score-row">${scoreBox("bianca", m?.score_bianca)}<span class="vs">–</span>${scoreBox("nera", m?.score_nera)}</div>
+    </div>
+
+    <div class="team-switch" role="radiogroup" aria-label="Squadra a cui aggiungere">
+      <span class="small muted">Aggiungi a</span>
+      <button type="button" id="seg-bianca" data-target="bianca" class="team-bianca">⚪ Bianca</button>
+      <button type="button" id="seg-nera" data-target="nera" class="team-nera">⚫ Nera</button>
+    </div>
+
+    <div class="boards">
+      <div class="board bianca" id="board-bianca" data-target="bianca"><h4>Squadra Bianca <span class="n">0</span></h4><div class="list"></div></div>
+      <div class="board nera" id="board-nera" data-target="nera"><h4>Squadra Nera <span class="n">0</span></h4><div class="list"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between"><h2 style="margin:0">Giocatori</h2><span class="small muted">tocca per aggiungere a <span id="pool-to" class="chip"></span></span></div>
+      <input type="search" id="pool-q" placeholder="Cerca…" autocomplete="off" style="margin:.6rem 0" />
+      <div class="pick-grid" id="pool"></div>
       <label>Note</label><input type="text" name="notes" value="${esc(m?.notes || "")}" placeholder="opzionale" />
-      <div class="row" style="margin-top:1rem"><button class="btn primary" type="submit">Salva tabellino</button><a class="btn" href="${m ? "#/partita/" + m.id : "#/partite"}">Annulla</a>${m && isAdmin() ? '<button type="button" class="btn danger" id="btn-del">Elimina partita</button>' : ""}</div></form>
-    ${!isAdmin() ? "" : ""}`;
+      ${m && isAdmin() ? '<div class="row" style="margin-top:1rem"><button type="button" class="btn danger" id="btn-del">Elimina partita</button></div>' : ""}
+    </div>
+
+    <div class="savebar"><div id="sum" class="small"></div><a class="btn" href="${m ? "#/partita/" + m.id : "#/partite"}">Annulla</a><button class="btn primary" type="submit" id="btn-save">Salva</button></div>
+  </form>`;
 }
 
 // ============================================================== VOTA

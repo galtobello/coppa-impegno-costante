@@ -126,11 +126,18 @@ export async function getHallOfFame() {
 }
 
 // ------------------------------------------------------------------ scritture (soggette a RLS)
-export async function saveMatch({ id, seasonId, playedOn, result, bianca, nera, notes }) {
-  return unwrap(await sb.rpc("save_match", {
+export async function saveMatch({ id, seasonId, playedOn, result, bianca, nera, notes, scoreBianca = null, scoreNera = null }) {
+  const args = {
     p_season_id: seasonId, p_played_on: playedOn, p_result: result || null,
     p_bianca: bianca, p_nera: nera, p_notes: notes || null, p_match_id: id || null,
-  }));
+  };
+  // il punteggio è facoltativo: lo si invia solo se c'è (o se la partita lo aveva già),
+  // così il salvataggio funziona anche prima di aver eseguito 0003_match_score.sql
+  if (scoreBianca !== null || scoreNera !== null) Object.assign(args, { p_score_bianca: scoreBianca, p_score_nera: scoreNera });
+  const res = await sb.rpc("save_match", args);
+  if (res.error && "p_score_bianca" in args && /save_match|schema cache|function/i.test(res.error.message))
+    throw new Error("Per salvare il punteggio va prima eseguito supabase/migrations/0003_match_score.sql nel SQL Editor di Supabase.");
+  return unwrap(res);
 }
 export async function deleteMatch(id) { unwrap(await sb.from("matches").delete().eq("id", id)); }
 

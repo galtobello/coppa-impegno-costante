@@ -4,7 +4,7 @@ export const DEMO = false;
 let D;
 const role = new URLSearchParams(location.search).get("role") || "admin";
 const uid = () => crypto.randomUUID();
-export async function init() { D = await (await fetch("./demo-data.json")).json(); D.ratings = []; D.invites = []; D.profiles = []; D.seasons.forEach((s) => s.is_current = s.name === "2025/2026"); }
+export async function init() { D = await (await fetch("./demo-data.json")).json(); D.ratings = []; D.invites = []; D.profiles = []; const cur = new URLSearchParams(location.search).get("cur") || "2025/2026"; D.seasons.forEach((s) => s.is_current = s.name === cur); }
 const seasonOf = (id) => D.seasons.find((s) => s.id === id);
 const recompute = () => {
   for (const m of D.v_matches) {
@@ -35,12 +35,13 @@ export async function getComments({ matchId }) { return D.ratings.filter((r) => 
 export async function getPlayerSeasons(pid) { return D.v_standings.filter((r) => r.player_id === pid && r.played > 0); }
 export async function getPlayerMatches() { return []; }
 export async function getHallOfFame() { return D.hall_of_fame; }
-export async function saveMatch({ id, seasonId, playedOn, result, bianca, nera, notes }) {
-  if (!id) { id = uid(); D.v_matches.push({ id, season_id: seasonId, played_on: playedOn, result, notes, season_name: seasonOf(seasonId).name }); }
-  else { Object.assign(D.v_matches.find((m) => m.id === id), { season_id: seasonId, played_on: playedOn, result, notes }); D.match_players = D.match_players.filter((mp) => mp.match_id !== id); }
+export async function saveMatch({ id, seasonId, playedOn, result, bianca, nera, notes, scoreBianca = null, scoreNera = null }) {
+  const sc = { score_bianca: scoreBianca, score_nera: scoreNera };
+  if (!id) { id = uid(); D.v_matches.push({ id, season_id: seasonId, played_on: playedOn, result, notes, ...sc, season_name: seasonOf(seasonId).name }); }
+  else { Object.assign(D.v_matches.find((m) => m.id === id), { season_id: seasonId, played_on: playedOn, result, notes, ...sc }); D.match_players = D.match_players.filter((mp) => mp.match_id !== id); }
   bianca.forEach((p) => D.match_players.push({ match_id: id, player_id: p, team: "bianca" }));
   nera.forEach((p) => D.match_players.push({ match_id: id, player_id: p, team: "nera" }));
-  recompute(); window.__saved = { id, bianca, nera, result }; return id;
+  recompute(); window.__saved = { id, bianca, nera, result, ...sc }; return id;
 }
 export async function deleteMatch(id) { D.v_matches = D.v_matches.filter((m) => m.id !== id); }
 export async function addMom(x) { D.v_mom_points.push({ id: uid(), season_id: x.seasonId, player_id: x.playerId, match_id: x.matchId, awarded_on: x.awardedOn, source: "manuale", note: x.note }); }
