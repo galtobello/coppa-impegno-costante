@@ -48,7 +48,7 @@ export async function addMom(x) { D.v_mom_points.push({ id: uid(), season_id: x.
 export async function deleteMom(id) { D.v_mom_points = D.v_mom_points.filter((m) => m.id !== id); }
 export async function getMyRatings(matchId) { return D.ratings.filter((r) => r.match_id === matchId && r.rater_id === myPlayerId()); }
 export async function upsertRatings(rows) { for (const r of rows) { const i = D.ratings.findIndex((x) => x.match_id === r.match_id && x.rater_id === r.rater_id && x.rated_id === r.rated_id); if (i >= 0) D.ratings[i] = { ...D.ratings[i], ...r }; else D.ratings.push({ id: uid(), ...r }); } window.__ratings = D.ratings; }
-export async function deleteRating() {}
+export async function deleteRating(id) { D.ratings = D.ratings.filter((r) => r.id !== id); window.__ratings = D.ratings; }
 export async function upsertPlayer(p) { if (p.id) Object.assign(D.players.find((x) => x.id === p.id), p); else D.players.push({ id: uid(), active: true, ...p }); }
 export async function upsertSeason(s) { if (s.id) Object.assign(seasonOf(s.id), s); else D.seasons.push({ id: uid(), is_current: false, ...s }); }
 export async function setCurrentSeason(id) { D.seasons.forEach((s) => s.is_current = s.id === id); }

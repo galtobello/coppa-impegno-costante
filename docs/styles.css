@@ -212,13 +212,6 @@ td.rank { color: var(--muted); font-weight: 700; }
 .pick.nera { background: var(--nera); color: #fff; border-color: transparent; outline: 1px solid var(--line); }
 .legend { display: flex; gap: 1rem; font-size: .8rem; color: var(--muted); }
 
-/* ---- voto ---- */
-.vote-row { display: grid; grid-template-columns: auto 1fr auto; gap: .6rem; align-items: center; padding: .6rem 0; border-bottom: 1px solid var(--line); }
-.vote-row .nick { font-weight: 700; }
-.vote-row input[type="range"] { width: 100%; accent-color: var(--accent); }
-.vote-row .val { font-weight: 800; font-size: 1.2rem; min-width: 2ch; text-align: right; color: var(--accent); }
-.vote-row textarea { grid-column: 1 / -1; min-height: 2.4rem; resize: vertical; }
-
 /* ---- albo d'oro ---- */
 .hof { display: grid; gap: .75rem; }
 .hof .item { display: grid; grid-template-columns: auto 1fr; gap: 1rem; align-items: center; }
@@ -338,6 +331,33 @@ input.search { margin-bottom: 1rem; padding-left: 2.4rem; background: var(--card
 .sk-seg button { min-height: 40px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-weight: 800; font-size: 1rem; cursor: pointer; }
 .sk-seg button.active { background: var(--accent); color: var(--on-accent); }
 
+/* ---- votazione ---- */
+.vote-form { display: grid; gap: 1.2rem; }
+.vote-team { border-radius: var(--radius); border: 1px solid var(--line); background: var(--bg-2); overflow: hidden; }
+.vote-team .vote-grid { padding: .7rem; }
+.vt-head { display: flex; justify-content: space-between; align-items: center; gap: .6rem; margin: 0; padding: .7rem .9rem; font-family: var(--font-display); font-weight: 400; text-transform: uppercase; letter-spacing: .02em; font-size: 1.35rem; line-height: 1.1; }
+.vt-head small { display: block; font-family: var(--font); font-size: .72rem; letter-spacing: .1em; font-weight: 700; opacity: .7; }
+.vt-head > span:first-of-type { flex: 1; }
+.vote-team.bianca .vt-head { background: var(--bianca); color: var(--brand-ink); }
+.vote-team.nera .vt-head { background: #1a1c19; color: #f5efe6; }
+.vote-team.bianca { border-color: color-mix(in srgb, var(--bianca) 45%, var(--line)); }
+.vote-team.nera { border-color: #1a1c19; }
+.vt-head .chip { background: rgba(0, 0, 0, .08); color: inherit; border-color: transparent; }
+.vote-team.nera .vt-head .chip { background: rgba(255, 255, 255, .12); }
+.vote-grid { display: grid; gap: .6rem; }
+@media (min-width: 820px) { .vote-grid { grid-template-columns: 1fr 1fr; } }
+.vote-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: .7rem; transition: border-color .15s; }
+.vote-card.voted { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.vc-head { display: flex; align-items: center; gap: .6rem; margin-bottom: .55rem; }
+.vc-name { flex: 1; font-weight: 700; }
+.vc-val { font-family: var(--font-display); font-size: 1.6rem; line-height: 1; min-width: 2ch; text-align: right; color: var(--muted); }
+.vote-card.voted .vc-val { color: var(--accent); }
+.vc-scores { display: grid; grid-template-columns: repeat(10, 1fr); gap: .25rem; }
+.vc-scores button { min-height: 40px; border-radius: 9px; border: 1px solid var(--line); background: var(--card-2); color: var(--text); font-weight: 800; cursor: pointer; padding: 0; }
+.vc-scores button.active { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.vc-cmt textarea { margin-top: .4rem; min-height: 2.6rem; resize: vertical; }
+.vote-card .linklike { padding-top: .5rem; text-decoration: none; }
+
 /* ===== smartphone ===== */
 @media (max-width: 600px) {
   /* radar a tutta larghezza: la card perde i margini laterali di main */
@@ -376,9 +396,10 @@ input.search { margin-bottom: 1rem; padding-left: 2.4rem; background: var(--card
   .match-card .team .count { font-size: 1.5rem; }
   .stats { grid-template-columns: repeat(3, 1fr); }
   form.row > input, form.row > select, form.row > .btn { max-width: none !important; flex: 1 1 100%; }
-  .vote-row { grid-template-columns: 1fr auto; }
-  .vote-row .nick { grid-column: 1 / -1; }
-  .vote-row input[type="range"] { height: 32px; }
+  .vote-team { margin: 0 -6px; }
+  .vote-team .vote-grid { padding: .5rem; }
+  .vc-scores { grid-template-columns: repeat(5, 1fr); }
+  .vc-scores button { min-height: 44px; font-size: 1.05rem; }
   .roster { grid-template-columns: 1fr 1fr; gap: .5rem; }
   .roster .col { padding: .6rem; }
   .roster .pl .avatar { display: none; }

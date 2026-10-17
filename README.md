@@ -63,6 +63,7 @@ La chiave *anon* è fatta per stare nel sito pubblico: non dà nessun potere olt
 
 ## Note tecniche
 
+* Prima di pubblicare una modifica al sito esegui `sh scripts/versione.sh`: aggiorna il numero di versione (`?v=...`) dei file, così chi ricarica la pagina scarica subito la versione nuova invece di quella in cache.
 * Nessun server proprio: il sito chiama direttamente l'API REST di Supabase con `supabase-js` caricato da CDN.
 * Le viste `v_standings`, `v_match_ratings`, `v_mom_points` ecc. sostituiscono le formule dell'Excel; sono *security definer* di proposito per esporre solo aggregati anonimi.
 * Modalità demo: finché `config.js` contiene i valori di esempio, il sito mostra i dati 2025/26 da `demo-data.json` in sola lettura.

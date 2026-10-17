@@ -4,7 +4,7 @@ OUT = sys.argv[1]; BASE = "http://localhost:8787/index.html"
 mock = open("scripts/api-mock.js", encoding="utf-8").read()
 async def ctx_for(b, role):
     ctx = await b.new_context(viewport={"width": 420, "height": 900}, color_scheme="dark")
-    await ctx.route("**/api.js", lambda r: r.fulfill(body=mock, content_type="text/javascript"))
+    await ctx.route("**/api.js*", lambda r: r.fulfill(body=mock, content_type="text/javascript"))
     page = await ctx.new_page(); errs = []
     page.on("pageerror", lambda e: errs.append(str(e)))
     page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)

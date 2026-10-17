@@ -1,5 +1,5 @@
-import * as api from "./api.js";
-import { DEMO } from "./api.js";
+import * as api from "./api.js?v=202610171933";
+import { DEMO } from "./api.js?v=202610171933";
 
 // ============================================================== stato & utilità
 const S = {
@@ -662,26 +662,74 @@ async function viewVote(matchId) {
   if (!mps.some((p) => p.player_id === me)) return `<div class="card"><h2>Non hai giocato questa partita</h2><p class="muted">Puoi votare solo le partite in cui sei stato in campo.</p></div>`;
   if (!m.voting_open) return `<div class="card"><h2>Votazioni chiuse</h2><p class="muted">Si poteva votare fino a ${fmtDate(lastVoteDay(m))}. L'MVP è stato assegnato a chi ha la media più alta.</p></div>`;
   const myTeam = mps.find((p) => p.player_id === me).team;
+  const otherTeam = myTeam === "bianca" ? "nera" : "bianca";
+  const TEAM = { bianca: "Bianca", nera: "Nera" };
   const prev = Object.fromEntries(mine.map((r) => [r.rated_id, r]));
-  const others = mps.filter((p) => p.player_id !== me).map((p) => ({ ...p, nickname: nick(p.player_id) })).sort((a, b) => (a.team === myTeam ? 0 : 1) - (b.team === myTeam ? 0 : 1) || a.nickname.localeCompare(b.nickname, "it"));
+  // voto corrente per giocatore: parte dai voti già dati, nessun voto di default
+  const score = Object.fromEntries(mine.map((r) => [r.rated_id, r.score]));
+  const others = mps.filter((p) => p.player_id !== me).map((p) => ({ ...p, nickname: nick(p.player_id) }));
+  const byTeam = (t) => others.filter((p) => p.team === t).sort((a, b) => a.nickname.localeCompare(b.nickname, "it"));
+
+  const refresh = () => {
+    for (const t of ["bianca", "nera"]) {
+      const list = byTeam(t), n = list.filter((p) => score[p.player_id]).length;
+      const el = $(`#vt-${t}`); if (el) el.textContent = `${n}/${list.length}`;
+    }
+    const tot = Object.keys(score).length;
+    $("#vote-sum").innerHTML = `Votati <b>${tot}</b> di ${others.length}`;
+  };
+
   setTimeout(() => {
-    document.querySelectorAll(".vote-row input[type=range]").forEach((r) => r.oninput = () => { r.closest(".vote-row").querySelector(".val").textContent = r.value; r.closest(".vote-row").classList.add("touched"); });
-    document.querySelectorAll(".vote-row").forEach((row) => row.querySelector(".skip").onclick = () => { row.classList.toggle("skipped"); row.querySelector(".skip").textContent = row.classList.contains("skipped") ? "Includi" : "Salta"; });
-    $("#f-vote").onsubmit = (e) => { e.preventDefault(); guard(async () => {
-      const rows = [];
-      document.querySelectorAll(".vote-row").forEach((row) => {
-        if (row.classList.contains("skipped")) return;
-        rows.push({ match_id: matchId, rater_id: me, rated_id: row.dataset.id, score: Number(row.querySelector("input[type=range]").value), comment: row.querySelector("textarea").value.trim() || null });
-      });
-      if (!rows.length) throw new Error("Nessun voto da salvare");
-      await api.upsertRatings(rows); toast(`Salvati ${rows.length} voti. Grazie!`); location.hash = "#/partita/" + matchId; }); };
+    const f = $("#f-vote");
+    f.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-score]"), c = e.target.closest("[data-cmt]");
+      if (b) {
+        const card = b.closest(".vote-card"), id = card.dataset.id, v = Number(b.dataset.score);
+        if (score[id] === v) delete score[id]; else score[id] = v;          // ritoccare lo stesso numero toglie il voto
+        card.querySelectorAll("[data-score]").forEach((x) => x.classList.toggle("active", Number(x.dataset.score) === score[id]));
+        card.classList.toggle("voted", !!score[id]);
+        card.querySelector(".vc-val").textContent = score[id] ?? "–";
+        refresh();
+      } else if (c) {
+        const box = c.closest(".vote-card").querySelector(".vc-cmt");
+        box.classList.toggle("hidden"); if (!box.classList.contains("hidden")) box.querySelector("textarea").focus();
+      }
+    });
+    refresh();
+    f.onsubmit = (e) => { e.preventDefault(); guard(async () => {
+      const rows = [], removed = [];
+      for (const card of f.querySelectorAll(".vote-card")) {
+        const id = card.dataset.id, cmt = card.querySelector("textarea").value.trim();
+        if (score[id]) rows.push({ match_id: matchId, rater_id: me, rated_id: id, score: score[id], comment: cmt || null });
+        else if (cmt) throw new Error(`Dai un voto a ${nick(id)} per lasciare il commento`);
+        else if (prev[id]) removed.push(prev[id].id);
+      }
+      if (!rows.length && !removed.length) throw new Error("Tocca un numero per votare almeno un giocatore");
+      const btn = $("#vote-save"); btn.disabled = true;
+      try {
+        if (rows.length) await api.upsertRatings(rows);
+        for (const rid of removed) await api.deleteRating(rid);
+      } finally { btn.disabled = false; }
+      toast(`Salvati ${rows.length} voti${removed.length ? `, ${removed.length} tolti` : ""}. Grazie!`); location.hash = "#/partita/" + matchId;
+    }); };
   });
-  return `<div class="page-head"><div class="grow"><h3>Vota i compagni</h3><h1>${fmtDate(m.played_on)}</h1><p class="muted small">Da 1 a 10, con un commento facoltativo. I voti sono anonimi: gli altri vedono solo la media. Puoi tornare a modificarli finché le votazioni sono aperte. Usa "Salta" per chi non vuoi valutare.</p></div></div>
-    <form id="f-vote" class="card">${others.map((p) => { const r = prev[p.player_id]; return `<div class="vote-row" data-id="${p.player_id}"><span class="nick">${avatar(p.nickname)} ${esc(p.nickname)} <span class="chip" style="font-size:.65rem">${p.team}</span></span>
-      <input type="range" min="1" max="10" step="1" value="${r?.score ?? 6}" /><span class="val">${r?.score ?? 6}</span>
-      <textarea placeholder="Commento (facoltativo)" maxlength="300">${esc(r?.comment || "")}</textarea><button type="button" class="btn sm skip">Salta</button></div>`; }).join("")}
-      <div class="row" style="margin-top:1rem"><button class="btn primary" type="submit">Salva i voti</button><a class="btn" href="#/partita/${matchId}">Annulla</a></div></form>
-    <style>.vote-row.skipped { opacity: .4 } .vote-row .skip { grid-column: 1 / -1; justify-self: end }</style>`;
+
+  const card = (p) => { const r = prev[p.player_id], v = score[p.player_id]; return `<div class="vote-card ${v ? "voted" : ""}" data-id="${p.player_id}">
+      <div class="vc-head">${avatar(p.nickname)}<span class="vc-name">${esc(p.nickname)}</span><span class="vc-val" aria-live="polite">${v ?? "–"}</span></div>
+      <div class="vc-scores" role="radiogroup" aria-label="Voto a ${esc(p.nickname)}">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => `<button type="button" data-score="${n}" class="${v === n ? "active" : ""}" aria-label="${n}">${n}</button>`).join("")}</div>
+      <button type="button" class="linklike small" data-cmt>💬 ${r?.comment ? "Modifica commento" : "Aggiungi un commento"}</button>
+      <div class="vc-cmt ${r?.comment ? "" : "hidden"}"><textarea placeholder="Commento anonimo (facoltativo)" maxlength="300">${esc(r?.comment || "")}</textarea></div></div>`; };
+  const section = (t, title) => { const list = byTeam(t); return list.length ? `<section class="vote-team ${t}">
+      <h2 class="vt-head"><span>${title} <small>Squadra ${TEAM[t]}</small></span><span class="chip" id="vt-${t}"></span></h2>
+      <div class="vote-grid">${list.map(card).join("")}</div></section>` : ""; };
+
+  return `<div class="page-head"><div class="grow"><h3>Vota i compagni</h3><h1>${fmtDate(m.played_on)}</h1>
+      <p class="muted small">Tocca un voto da 1 a 10 (ritoccalo per toglierlo): chi non tocchi non riceve voti. I voti sono anonimi e puoi modificarli fino a ${fmtDate(lastVoteDay(m))}.</p></div></div>
+    <form id="f-vote" class="vote-form">
+      ${section(myTeam, "La tua squadra")}
+      ${section(otherTeam, "Avversari")}
+      <div class="savebar"><div id="vote-sum" class="small"></div><a class="btn" href="#/partita/${matchId}">Annulla</a><button class="btn primary" type="submit" id="vote-save">Salva</button></div>
+    </form>`;
 }
 
 boot().catch((e) => { console.error(e); $("#app").innerHTML = `<div class="card"><h2>Errore di avvio</h2><p class="muted">${esc(e.message)}</p></div>`; });
