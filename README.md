@@ -10,6 +10,7 @@ docs/                     il sito (HTML/CSS/JS, nessun build)
   api.js                  accesso ai dati (Supabase, o demo se non configurato)
   config.js               <-- qui vanno URL e chiave del progetto Supabase
   demo-data.json          dati 2025/26 per la modalità demo
+  img/                    loghi Disc & Disc ottimizzati per il web, favicon e icone
 supabase/migrations/
   0001_schema.sql         tabelle, viste di calcolo, ruoli e policy di sicurezza
   0002_seed.sql           anagrafica, stagione 2025/26 (19 partite), MoM, albo d'oro, regolamento

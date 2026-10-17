@@ -162,7 +162,7 @@ async function viewStandings() {
     });
   });
   return `${demoBanner()}
-  <div class="page-head"><div class="grow"><h3>Classifica</h3><h1>Coppa Impegno Costante</h1></div>${seasonSelect()}</div>
+  <div class="page-head"><div class="grow brand-head"><span class="logo" role="img" aria-label="Disc &amp; Disc"></span><div><h3>Classifica</h3><h1>Coppa Impegno Costante</h1></div></div>${seasonSelect()}</div>
   <div class="tabs" id="tabs"><button class="active" data-t="pts">🏆 Impegno Costante</button><button data-t="eff">⚡ Coppa Efficienza</button><button data-t="mvp">⭐ MVP</button></div>
   <section data-tab="pts" style="margin-top:1rem">${podium(byPts.filter((r) => r.eligible_ranking), "points", " pt")}${byPts.length ? tablePts : '<div class="empty">Nessuna partita ancora giocata in questa stagione.</div>'}
     <p class="small muted">G = giocate · V/N/P = vinte/pareggiate/perse · ${s.points_win} punti a vittoria, ${s.points_draw} a pareggio, ${s.points_mom} per MoM/MVP${s.min_players_valid > 0 ? ` · valgono le partite con almeno ${s.min_players_valid} giocatori` : ""}.</p></section>
@@ -279,7 +279,7 @@ async function viewRules() {
 
 // ============================================================== LOGIN
 async function viewLogin() {
-  if (DEMO) return `<div class="card login-box"><h2>Modalità demo</h2><p class="muted">Il login si attiva collegando un progetto Supabase in <code>config.js</code>.</p></div>`;
+  if (DEMO) return `<div class="card login-box"><span class="logo" role="img" aria-label="Disc &amp; Disc"></span><h2>Modalità demo</h2><p class="muted">Il login si attiva collegando un progetto Supabase in <code>config.js</code>.</p></div>`;
   if (S.user) { location.hash = "#/area"; return ""; }
   setTimeout(() => {
     const f = $("#login-form");
@@ -290,7 +290,7 @@ async function viewLogin() {
     });
     $("#btn-magic").onclick = () => guard(async () => { if (!f.email.value) throw new Error("Inserisci l'email"); await api.auth.magicLink(f.email.value.trim()); toast("Ti ho inviato un link di accesso via email."); });
   });
-  return `<div class="card login-box"><h2>Accedi</h2><p class="small muted">Usa l'email che hai comunicato all'organizzatore: verrai collegato automaticamente al tuo giocatore.</p>
+  return `<div class="card login-box"><span class="logo" role="img" aria-label="Disc &amp; Disc"></span><h2>Accedi</h2><p class="small muted">Usa l'email che hai comunicato all'organizzatore: verrai collegato automaticamente al tuo giocatore.</p>
     <form id="login-form"><label>Email</label><input type="email" name="email" required autocomplete="email" /><label>Password</label><input type="password" name="password" autocomplete="current-password" />
       <div class="row" style="margin-top:1rem"><button class="btn primary" type="submit">Accedi</button><button class="btn" type="button" id="btn-signup">Registrati</button><button class="btn" type="button" id="btn-magic">Link via email</button></div></form></div>`;
 }
@@ -444,7 +444,7 @@ async function viewScoreForm(id) {
   const players = S.players.filter((p) => p.active || assign[p.id]);
   const render = () => {
     const nb = Object.values(assign).filter((t) => t === "bianca").length, nn = Object.values(assign).filter((t) => t === "nera").length;
-    $("#cnt").innerHTML = `<span class="chip" style="background:var(--bianca);color:#0b1020">Bianca ${nb}</span> <span class="chip" style="background:var(--nera);color:#fff">Nera ${nn}</span> <span class="chip ${nb + nn >= (S.seasons.find((s) => s.id === seasonId)?.min_players_valid || 0) ? "ok" : "warn"}">${nb + nn} totali</span>`;
+    $("#cnt").innerHTML = `<span class="chip" style="background:var(--bianca);color:var(--brand-ink)">Bianca ${nb}</span> <span class="chip" style="background:var(--nera);color:#fff">Nera ${nn}</span> <span class="chip ${nb + nn >= (S.seasons.find((s) => s.id === seasonId)?.min_players_valid || 0) ? "ok" : "warn"}">${nb + nn} totali</span>`;
     document.querySelectorAll(".pick").forEach((b) => { b.className = "pick " + (assign[b.dataset.id] || ""); });
   };
   setTimeout(() => {
