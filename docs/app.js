@@ -1,5 +1,5 @@
-import * as api from "./api.js?v=202610181102";
-import { DEMO } from "./api.js?v=202610181102";
+import * as api from "./api.js?v=202610181501";
+import { DEMO } from "./api.js?v=202610181501";
 
 // ============================================================== stato & utilità
 const S = {
@@ -479,13 +479,18 @@ async function viewLogin(mode) {
 async function viewArea() {
   if (DEMO) return viewLogin();
   if (!S.user) { location.hash = "#/login"; return ""; }
+  // chi non è ancora approvato rilegge lo stato ogni volta: l'approvazione deve vedersi senza rifare l'accesso
+  if (S.me?.status !== "approved") { S.me = await api.auth.me(); renderUserbox(); }
   const me = S.me;
   if (me && me.status !== "approved") {
-    setTimeout(() => { $("#btn-logout").onclick = () => guard(async () => { await api.auth.signOut(); location.hash = "#/"; }); });
+    setTimeout(() => {
+      $("#btn-logout").onclick = () => guard(async () => { await api.auth.signOut(); location.hash = "#/"; });
+      $("#btn-recheck").onclick = () => guard(async () => { S.me = await api.auth.me(); if (S.me?.status === "approved") toast("Registrazione accettata!"); route(); });
+    });
     return `<div class="card login-box"><span class="logo" role="img" aria-label="Disc &amp; Disc"></span>
       ${me.status === "pending" ? `<h2>Registrazione in attesa</h2><p>Hai chiesto di entrare come <b>${esc(me.requested_nickname || "?")}</b>${me.requested_full_name ? ` (${esc(me.requested_full_name)})` : ""}. L'organizzatore deve accettare la richiesta: poi potrai votare i compagni.</p>`
         : `<h2>Registrazione non accettata</h2><p class="muted">L'organizzatore non ha accettato la richiesta. Se pensi sia un errore, parlane con lui.</p>`}
-      <p class="small muted">${esc(S.user.email)}</p><button class="btn" id="btn-logout">Esci</button></div>`;
+      <p class="small muted">${esc(S.user.email)}</p><div class="row">${me.status === "pending" ? '<button class="btn primary" id="btn-recheck">Ricontrolla</button>' : ""}<button class="btn" id="btn-logout">Esci</button></div></div>`;
   }
   const roleLabel = ROLE_LABEL[me?.role] || "–";
   const pending = isAdmin() ? (await api.getProfiles()).filter((p) => p.status === "pending").length : 0;
@@ -530,9 +535,11 @@ async function viewArea() {
 async function renderAdminPlayers() {
   const el = $("#adm-players"); if (!el) return;
   S.players = await api.getPlayers(); S.pmap = new Map(S.players.map((p) => [p.id, p]));
+  // email dell'account collegato: sta nel profilo (leggibile solo dall'organizzatore), non nella tabella pubblica dei giocatori
+  const account = Object.fromEntries((await api.getProfiles()).filter((u) => u.player_id).map((u) => [u.player_id, u]));
   el.innerHTML = `<h2>Giocatori</h2><form class="row" id="f-new-player"><input type="text" name="nickname" placeholder="Nickname" required style="max-width:200px" /><input type="text" name="full_name" placeholder="Nome e cognome (opz.)" style="max-width:260px" /><button class="btn primary">Aggiungi</button></form>
-    <div class="table-wrap" style="margin-top:1rem;box-shadow:none"><table><thead><tr><th class="name">Nickname</th><th class="name">Nome</th><th>Attivo</th><th></th></tr></thead><tbody>
-    ${S.players.map((p) => `<tr data-id="${p.id}"><td class="name"><input type="text" value="${esc(p.nickname)}" data-f="nickname" style="min-width:120px" /></td><td class="name"><input type="text" value="${esc(p.full_name || "")}" data-f="full_name" style="min-width:160px" /></td><td><input type="checkbox" ${p.active ? "checked" : ""} data-f="active" /></td><td><button class="btn sm" data-save>Salva</button></td></tr>`).join("")}</tbody></table></div>`;
+    <div class="table-wrap" style="margin-top:1rem;box-shadow:none"><table><thead><tr><th class="name">Nickname</th><th class="name">Nome</th><th class="name">Account</th><th>Attivo</th><th></th></tr></thead><tbody>
+    ${S.players.map((p) => `<tr data-id="${p.id}"><td class="name"><input type="text" value="${esc(p.nickname)}" data-f="nickname" style="min-width:120px" /></td><td class="name"><input type="text" value="${esc(p.full_name || "")}" data-f="full_name" style="min-width:160px" /></td><td class="name small">${account[p.id] ? `${esc(account[p.id].email || "")}${account[p.id].status === "approved" ? "" : ' <span class="chip warn mini">in attesa</span>'}` : '<span class="muted">—</span>'}</td><td><input type="checkbox" ${p.active ? "checked" : ""} data-f="active" /></td><td><button class="btn sm" data-save>Salva</button></td></tr>`).join("")}</tbody></table></div>`;
   $("#f-new-player").onsubmit = (e) => { e.preventDefault(); guard(async () => { await api.upsertPlayer({ nickname: e.target.nickname.value.trim(), full_name: e.target.full_name.value.trim() || null }); toast("Giocatore aggiunto"); renderAdminPlayers(); }); };
   el.querySelectorAll("[data-save]").forEach((b) => b.onclick = () => guard(async () => {
     const tr = b.closest("tr");

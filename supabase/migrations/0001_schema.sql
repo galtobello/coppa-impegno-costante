@@ -266,6 +266,26 @@ $$;
 grant execute on function public.me() to authenticated;
 
 -- Accetta una registrazione: collega il giocatore con lo stesso nickname o lo crea
+-- collegare un giocatore abilita il giocatore e, se l'utente era in attesa, lo approva (vedi 0009)
+create or replace function app.profiles_link_player()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if new.player_id is not null and new.player_id is distinct from old.player_id then
+    if new.status = 'pending' then
+      new.status := 'approved';
+      new.reviewed_at := now();
+    end if;
+    update public.players
+       set active = true,
+           full_name = coalesce(nullif(trim(new.requested_full_name), ''), full_name)
+     where id = new.player_id;
+  end if;
+  return new;
+end $$;
+
+create or replace trigger profiles_link_player before update on public.profiles
+  for each row execute function app.profiles_link_player();
+
 create or replace function public.approve_registration(p_user uuid, p_role public.user_role default 'player')
 returns uuid language plpgsql security definer set search_path = '' as $$
 declare
@@ -276,26 +296,28 @@ begin
   if not app.is_admin() then raise exception 'Solo l''organizzatore può accettare le registrazioni'; end if;
   select * into prof from public.profiles where id = p_user;
   if prof.id is null then raise exception 'Utente non trovato'; end if;
-  if coalesce(prof.requested_nickname, '') = '' then raise exception 'La registrazione non ha un nickname'; end if;
+  if coalesce(trim(prof.requested_nickname), '') = '' then raise exception 'La registrazione non ha un nickname'; end if;
 
-  select id into v_player from public.players where lower(nickname) = lower(prof.requested_nickname);
+  select id into v_player from public.players where lower(nickname) = lower(trim(prof.requested_nickname));
   if v_player is null then
     insert into public.players (nickname, full_name, active)
-    values (prof.requested_nickname, prof.requested_full_name, true)
+    values (trim(prof.requested_nickname), nullif(trim(prof.requested_full_name), ''), true)
     returning id into v_player;
   else
     select email into v_other from public.profiles where player_id = v_player and id <> p_user;
     if v_other is not null then
       raise exception 'Il giocatore % è già collegato all''utente %', prof.requested_nickname, v_other;
     end if;
-    update public.players set active = true,
-           full_name = coalesce(full_name, prof.requested_full_name)
-     where id = v_player;
   end if;
 
   update public.profiles
      set player_id = v_player, role = p_role, status = 'approved', reviewed_at = now()
    where id = p_user;
+  -- abilita e completa il giocatore anche se era già collegato (il trigger scatta solo se cambia)
+  update public.players
+     set active = true,
+         full_name = coalesce(nullif(trim(prof.requested_full_name), ''), full_name)
+   where id = v_player;
   return v_player;
 end $$;
 
