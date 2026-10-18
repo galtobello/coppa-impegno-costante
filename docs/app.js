@@ -1,5 +1,5 @@
-import * as api from "./api.js?v=202610181501";
-import { DEMO } from "./api.js?v=202610181501";
+import * as api from "./api.js?v=202610181602";
+import { DEMO } from "./api.js?v=202610181602";
 
 // ============================================================== stato & utilità
 const S = {
@@ -203,6 +203,15 @@ async function standingsBody(s, isCurrent) {
 }
 
 // ============================================================== PARTITE
+// commento firmato (il voto resta anonimo); l'organizzatore lo può cancellare
+const commentHtml = (c, who) => `<div class="comment"><div class="who"><span>${who}</span>${isAdmin() && c.rating_id ? `<button type="button" class="cmt-del" data-rmc="${c.rating_id}" aria-label="Cancella commento" title="Cancella commento">🗑</button>` : ""}</div>${esc(c.comment)}</div>`;
+const author = (c) => esc(c.author_nickname || nick(c.author_id) || "?");
+function bindCommentDelete() {
+  document.querySelectorAll("[data-rmc]").forEach((b) => b.onclick = () => guard(async () => {
+    if (!confirm("Cancellare questo commento? Il voto resta.")) return;
+    await api.removeComment(b.dataset.rmc); toast("Commento cancellato"); route();
+  }));
+}
 function resultChip(m) {
   if (!m.result) return `<span class="chip warn">Risultato da inserire</span>`;
   if (m.result === "pareggio") return `<span class="chip info">Pareggio</span>`;
@@ -226,6 +235,7 @@ async function viewMatches() {
 }
 
 async function viewMatch(id) {
+  setTimeout(bindCommentDelete);
   const all = await api.getMatches(S.season.id);
   let m = all.find((x) => x.id === id);
   if (!m) { // forse di un'altra stagione
@@ -251,10 +261,10 @@ async function viewMatch(id) {
     <div class="roster">${col("bianca")}${col("nera")}</div>
     ${m.notes ? `<p class="muted">${esc(m.notes)}</p>` : ""}
     <div class="grid cols-2" style="margin-top:1rem">
-      <div class="card"><h2>Valutazioni</h2>${ratings.length ? `<p class="small muted">${ratings.reduce((a, r) => a + r.votes, 0)} voti espressi. ${m.voting_open ? `Votazioni aperte fino a ${fmtDate(lastVoteDay(m))}: alla chiusura diventa MVP chi ha la media più alta (a pari media, più MVP).` : (mvps.length ? `MVP: <b>${mvps.map((r) => esc(nick(r.player_id))).join(", ")}</b>${m.is_valid ? "" : " (partita non valida: niente punto)"}.` : `Nessun MVP: serviva almeno ${sea.min_votes_mvp} voti.`)}</p>
+      <div class="card"><h2>Valutazioni</h2>${ratings.length ? `<p class="small muted">${((n) => `${n} ${n === 1 ? "voto espresso" : "voti espressi"}`)(ratings.reduce((a, r) => a + r.votes, 0))}. ${m.voting_open ? `Votazioni aperte fino a ${fmtDate(lastVoteDay(m))}: alla chiusura diventa MVP chi ha la media più alta (a pari media, più MVP).` : (mvps.length ? `MVP: <b>${mvps.map((r) => esc(nick(r.player_id))).join(", ")}</b>${m.is_valid ? "" : " (partita non valida: niente punto)"}.` : `Nessun MVP: serviva almeno ${sea.min_votes_mvp} voti.`)}</p>
         ${[...ratings].sort((a, b) => b.avg_score - a.avg_score).map((r) => `<div class="row" style="justify-content:space-between;padding:.3rem 0;border-bottom:1px solid var(--line)"><span>${r.is_mvp ? "⭐ " : ""}${esc(nick(r.player_id))}</span><span class="row" style="flex:0 0 55%"><div class="bar" style="flex:1"><i style="width:${r.avg_score * 10}%"></i></div><b>${Number(r.avg_score).toFixed(2)}</b><span class="small muted">(${r.votes})</span></span></div>`).join("")}`
         : `<p class="muted">${m.voting_open ? `Ancora nessun voto: chi ha giocato può votare fino a ${fmtDate(lastVoteDay(m))}. Alla chiusura viene assegnato l'MVP.` : "Nessun voto."}</p>`}</div>
-      <div class="card"><h2>Commenti</h2>${comments.length ? comments.map((c) => `<div class="comment"><div class="who">a ${esc(nick(c.player_id))} · voto ${c.score}</div>${esc(c.comment)}</div>`).join("") : '<p class="muted">Nessun commento.</p>'}</div>
+      <div class="card"><h2>Commenti</h2>${comments.length ? comments.map((c) => commentHtml(c, `<b>${author(c)}</b> → ${esc(nick(c.player_id))}`)).join("") : '<p class="muted">Nessun commento.</p>'}</div>
     </div>`;
 }
 
@@ -351,6 +361,7 @@ async function viewPlayers() {
 }
 
 async function viewPlayer(id) {
+  setTimeout(bindCommentDelete);
   const p = S.pmap.get(id);
   if (!p) return `<div class="empty">Giocatore non trovato.</div>`;
   const [seasons, matches, comments, skills, myRatings] = await Promise.all([api.getPlayerSeasons(id), api.getPlayerMatches(id), api.getComments({ playerId: id }), api.getSkills(id).catch(() => null), api.getPlayerMatchRatings(id).catch(() => [])]);
@@ -387,7 +398,7 @@ async function viewPlayer(id) {
         ${seasons.sort((a, b) => b.season_name.localeCompare(a.season_name)).map((s) => `<tr><td class="name">${esc(s.season_name)}</td><td>${s.rank_points}</td><td>${s.played}</td><td>${s.wins}</td><td>${s.losses}</td><td>${s.mom}</td><td class="pts">${s.points}</td></tr>`).join("") || '<tr><td colspan="7" class="muted">—</td></tr>'}</tbody></table></div></div>
       <div class="card"><h2>Ultime partite</h2>${matches.slice(0, 8).map((m) => `<div class="row" style="justify-content:space-between;padding:.35rem 0;border-bottom:1px solid var(--line)" data-go="#/partita/${m.id}"><span>${fmtDate(m.played_on)} · <span class="muted small">${m.team}</span></span>${resultChip(m)}</div>`).join("") || '<p class="muted">—</p>'}</div>
     </div>
-    <div class="card" style="margin-top:1rem"><h2>Commenti ricevuti</h2>${comments.length ? comments.map((c) => `<div class="comment"><div class="who">voto ${c.score} · ${new Date(c.created_at).toLocaleDateString("it-IT")}</div>${esc(c.comment)}</div>`).join("") : '<p class="muted">Nessun commento ancora. I commenti sono anonimi.</p>'}</div>`;
+    <div class="card" style="margin-top:1rem"><h2>Commenti ricevuti</h2>${comments.length ? comments.map((c) => commentHtml(c, `da <b>${author(c)}</b> · ${new Date(c.created_at).toLocaleDateString("it-IT")}`)).join("") : '<p class="muted">Nessun commento ancora.</p>'}</div>`;
 }
 
 // ============================================================== ALBO D'ORO & REGOLAMENTO
@@ -405,14 +416,14 @@ async function viewRules() {
   const guide = [
     ["all", "👀 Tutti (anche senza accesso)", `<ul>
       <li><b>Classifica</b>: la stagione in corso con tutta la rosa (anche a 0 punti) e, nella scheda <b>Storico</b>, le stagioni passate. Sotto-schede Impegno, Efficienza e MVP.</li>
-      <li><b>Partite</b>: tutti i tabellini con squadre, risultato, punteggio, MVP e commenti anonimi.</li>
+      <li><b>Partite</b>: tutti i tabellini con squadre, risultato, punteggio, MVP e commenti (firmati da chi li ha scritti).</li>
       <li><b>Giocatori</b>: cerca un giocatore e apri la sua scheda: caratteristiche (radar), statistiche della stagione, andamento partita per partita con i voti ricevuti.</li>
       <li><b>Albo d'oro</b> e <b>Regolamento</b>.</li></ul>`],
     ["player", "🥏 Giocatore", `<ol>
       <li><b>Registrati</b> da <i>Area → Registrati</i> con nickname (quello usato in squadra), nome e cognome, email e password.</li>
       <li>Aspetta che l'organizzatore <b>accetti la richiesta</b>: verrai collegato al tuo giocatore.</li>
       <li>Dopo ogni partita in cui hai giocato, in <i>Area</i> trovi <b>Vota i compagni</b>: tocca un voto da 1 a 10 per chi vuoi valutare, divisi tra la tua squadra e gli avversari, con un commento facoltativo. Chi non tocchi non riceve voti.</li>
-      <li>Si vota per <b>${vd} giorni</b> dal giorno della partita (con le partite del venerdì, fino al giovedì) e puoi modificare i voti fino alla chiusura. I voti sono <b>anonimi</b>.</li>
+      <li>Si vota per <b>${vd} giorni</b> dal giorno della partita (con le partite del venerdì, fino al giovedì) e puoi modificare i voti fino alla chiusura. I voti sono <b>anonimi</b>; i commenti invece mostrano il tuo nickname.</li>
       <li>Alla chiusura diventa <b>MVP</b> chi ha la media più alta (con almeno ${mv} voti; a pari media più MVP) e prende il punto Man of the Match.</li></ol>`],
     ["coach", "📋 Allenatore", `<p>Tutto quello che fa il giocatore, più:</p><ul>
       <li><b>Tabellini</b>: <i>Area → Nuovo tabellino</i> (o il "+" nella pagina Partite). Stagione e data sono già quelle di oggi; scegli il risultato e, se vuoi, il punteggio (il risultato si calcola da solo). Poi seleziona "Aggiungi a Bianca/Nera" e tocca i nomi: compaiono subito nella squadra; × per toglierli.</li>
@@ -423,7 +434,8 @@ async function viewRules() {
       <li><b>Utenti</b>: accetta o rifiuta le <b>richieste di registrazione</b>. Accettando, l'utente viene collegato al giocatore con lo stesso nickname, o il giocatore viene creato. Qui assegni i ruoli (Giocatore, Allenatore, Score keeper, Organizzatore) ed elimini un account (il giocatore e le sue statistiche restano).</li>
       <li><b>Giocatori</b>: anagrafica e giocatori attivi.</li>
       <li><b>Stagioni</b>: date e regole (punti, minimo giocatori, giorni di voto, voti minimi per l'MVP) e stagione in corso.</li>
-      <li><b>Testi e albo</b>: regolamento, nome del club e albo d'oro. Può anche eliminare le partite.</li></ul>`],
+      <li><b>Testi e albo</b>: regolamento, nome del club e albo d'oro. Può anche eliminare le partite.</li>
+      <li><b>Commenti</b>: può cancellare un commento con 🗑 (nella partita o nella scheda del giocatore); il voto resta.</li></ul>`],
   ];
   return `<div class="page-head"><div class="grow"><h3>Regole</h3><h1>Regolamento</h1></div></div>
     <div class="card"><div class="regola">${esc(S.settings.regolamento || "Regolamento non ancora inserito.")}</div></div>
@@ -855,7 +867,7 @@ async function viewVote(matchId) {
         if (rows.length) await api.upsertRatings(rows);
         for (const rid of removed) await api.deleteRating(rid);
       } finally { btn.disabled = false; }
-      toast(`Salvati ${rows.length} voti${removed.length ? `, ${removed.length} tolti` : ""}. Grazie!`); location.hash = "#/partita/" + matchId;
+      toast(`${rows.length === 1 ? "Salvato 1 voto" : `Salvati ${rows.length} voti`}${removed.length ? `, ${removed.length} ${removed.length === 1 ? "tolto" : "tolti"}` : ""}. Grazie!`); location.hash = "#/partita/" + matchId;
     }); };
   });
 
@@ -863,13 +875,13 @@ async function viewVote(matchId) {
       <div class="vc-head">${avatar(p.nickname)}<span class="vc-name">${esc(p.nickname)}</span><span class="vc-val" aria-live="polite">${v ?? "–"}</span></div>
       <div class="vc-scores" role="radiogroup" aria-label="Voto a ${esc(p.nickname)}">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => `<button type="button" data-score="${n}" class="${v === n ? "active" : ""}" aria-label="${n}">${n}</button>`).join("")}</div>
       <button type="button" class="linklike small" data-cmt>💬 ${r?.comment ? "Modifica commento" : "Aggiungi un commento"}</button>
-      <div class="vc-cmt ${r?.comment ? "" : "hidden"}"><textarea placeholder="Commento anonimo (facoltativo)" maxlength="300">${esc(r?.comment || "")}</textarea></div></div>`; };
+      <div class="vc-cmt ${r?.comment ? "" : "hidden"}"><textarea placeholder="Commento (facoltativo, firmato con il tuo nickname)" maxlength="300">${esc(r?.comment || "")}</textarea></div></div>`; };
   const section = (t, title) => { const list = byTeam(t); return list.length ? `<section class="vote-team ${t}">
       <h2 class="vt-head"><span>${title} <small>Squadra ${TEAM[t]}</small></span><span class="chip" id="vt-${t}"></span></h2>
       <div class="vote-grid">${list.map(card).join("")}</div></section>` : ""; };
 
   return `<div class="page-head"><div class="grow"><h3>Vota i compagni</h3><h1>${fmtDate(m.played_on)}</h1>
-      <p class="muted small">Tocca un voto da 1 a 10 (ritoccalo per toglierlo): chi non tocchi non riceve voti. I voti sono anonimi e puoi modificarli fino a ${fmtDate(lastVoteDay(m))}.</p></div></div>
+      <p class="muted small">Tocca un voto da 1 a 10 (ritoccalo per toglierlo): chi non tocchi non riceve voti. I voti sono anonimi, i commenti invece sono firmati con il tuo nickname. Puoi modificarli fino a ${fmtDate(lastVoteDay(m))}.</p></div></div>
     <form id="f-vote" class="vote-form">
       ${section(myTeam, "La tua squadra")}
       ${section(otherTeam, "Avversari")}

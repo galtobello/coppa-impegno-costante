@@ -24,7 +24,8 @@ export const auth = {
   async signUp(email, password, nickname, fullName) { window.__signup = { email, nickname, fullName }; },
   async me() {
     if (["pending", "rejected"].includes(role)) return { user_id: "u1", email: "test@example.com", role: null, player_id: null, status: role, requested_nickname: "Nuovo", requested_full_name: "Mario Rossi" };
-    return { user_id: "u1", email: "test@example.com", role, status: "approved", player_id: role === "admin" ? null : myPlayerId(), nickname: role === "admin" ? null : "Thor" };
+    const wp = role !== "admin" || new URLSearchParams(location.search).has("withplayer");
+    return { user_id: "u1", email: "test@example.com", role, status: "approved", player_id: wp ? myPlayerId() : null, nickname: wp ? "Thor" : null };
   },
 };
 export async function getSettings() { return Object.fromEntries(D.settings.map((s) => [s.key, s.value])); }
@@ -39,7 +40,8 @@ export async function getMatchRatings(id) {
   const agg = {}; D.ratings.filter((r) => r.match_id === id).forEach((r) => { (agg[r.rated_id] ||= []).push(r.score); });
   return Object.entries(agg).map(([player_id, s]) => ({ match_id: id, player_id, avg_score: s.reduce((a, b) => a + b) / s.length, votes: s.length, is_mvp: false }));
 }
-export async function getComments({ matchId }) { return D.ratings.filter((r) => r.match_id === matchId && r.comment).map((r) => ({ match_id: r.match_id, player_id: r.rated_id, score: r.score, comment: r.comment, created_at: new Date().toISOString() })); }
+export async function getComments({ matchId, playerId }) { return D.ratings.filter((r) => (!matchId || r.match_id === matchId) && (!playerId || r.rated_id === playerId) && r.comment).map((r) => ({ match_id: r.match_id, player_id: r.rated_id, score: null, comment: r.comment, created_at: new Date().toISOString(), rating_id: r.id, author_id: r.rater_id, author_nickname: D.players.find((p) => p.id === r.rater_id)?.nickname })); }
+export async function removeComment(id) { const r = D.ratings.find((x) => x.id === id); if (r) r.comment = null; window.__removed = id; }
 export async function getPlayerSeasons(pid) { return D.v_standings.filter((r) => r.player_id === pid && r.played > 0); }
 export async function getPlayerMatches(pid) {
   recompute(); const mps = D.match_players.filter((mp) => mp.player_id === pid);

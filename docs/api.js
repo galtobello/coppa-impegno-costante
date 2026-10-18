@@ -1,5 +1,5 @@
 // Livello dati: Supabase quando configurato, altrimenti modalità demo (sola lettura).
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=202610181501";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=202610181602";
 
 export const DEMO = SUPABASE_URL.includes("YOUR-PROJECT") || !SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.startsWith("YOUR");
 
@@ -8,7 +8,7 @@ let demo = null;    // dati demo
 
 export async function init() {
   if (DEMO) {
-    demo = await (await fetch("./demo-data.json?v=202610181501")).json();
+    demo = await (await fetch("./demo-data.json?v=202610181602")).json();
     return;
   }
   const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
@@ -111,6 +111,9 @@ export async function getComments({ matchId, playerId }) {
   if (playerId) q = q.eq("player_id", playerId);
   return unwrap(await q);
 }
+
+// l'organizzatore svuota un commento (il voto resta)
+export async function removeComment(ratingId) { unwrap(await sb.rpc("remove_comment", { p_rating: ratingId })); }
 
 export async function getPlayerSeasons(playerId) {
   if (DEMO) return demo.v_standings.filter((r) => r.player_id === playerId && r.played > 0);

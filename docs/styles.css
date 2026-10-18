@@ -200,7 +200,10 @@ td.rank { color: var(--muted); font-weight: 700; }
 .stat b { display: block; font-size: 1.4rem; }
 .stat span { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .comment { padding: .6rem .8rem; border-left: 3px solid var(--accent-2); background: var(--card-2); border-radius: 0 12px 12px 0; margin: .4rem 0; }
-.comment .who { font-size: .75rem; color: var(--muted); }
+.comment .who { font-size: .78rem; color: var(--muted); display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.comment .who b { color: var(--text); }
+.cmt-del { border: 0; background: transparent; cursor: pointer; font-size: 1rem; padding: .2rem .35rem; border-radius: 8px; min-width: 36px; min-height: 32px; }
+.cmt-del:hover { background: color-mix(in srgb, var(--accent-3) 18%, transparent); }
 .trend { display: flex; gap: .3rem; overflow-x: auto; padding: .8rem 0 .4rem; scroll-snap-type: x proximity; scrollbar-width: thin; }
 .am { flex: none; width: 46px; display: grid; justify-items: center; gap: .3rem; scroll-snap-align: end; padding: .35rem 0; border-radius: 10px; }
 .am:hover { background: var(--card-2); }

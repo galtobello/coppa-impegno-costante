@@ -265,6 +265,17 @@ language sql stable security definer set search_path = '' as $$
 $$;
 grant execute on function public.me() to authenticated;
 
+-- l'organizzatore cancella un commento (vedi 0010)
+create or replace function public.remove_comment(p_rating uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if not app.is_admin() then raise exception 'Solo l''organizzatore può cancellare i commenti'; end if;
+  update public.player_ratings set comment = null where id = p_rating;
+  if not found then raise exception 'Commento non trovato'; end if;
+end $$;
+revoke execute on function public.remove_comment(uuid) from public, anon;
+grant execute on function public.remove_comment(uuid) to authenticated;
+
 -- Accetta una registrazione: collega il giocatore con lo stesso nickname o lo crea
 -- collegare un giocatore abilita il giocatore e, se l'utente era in attesa, lo approva (vedi 0009)
 create or replace function app.profiles_link_player()
@@ -444,10 +455,14 @@ select match_id, player_id,
        (voting_closed and votes >= min_votes_mvp and avg_score = best_score) as is_mvp
 from ranked;
 
--- Commenti ricevuti (anonimi: senza chi li ha scritti)
+-- Commenti ricevuti, firmati; il voto resta anonimo (vedi 0010)
 create or replace view public.v_player_comments as
-select r.match_id, r.rated_id as player_id, r.score, r.comment, r.created_at
+select r.match_id, r.rated_id as player_id,
+       null::smallint as score,              -- il voto resta anonimo
+       r.comment, r.created_at,
+       r.id as rating_id, r.rater_id as author_id, pl.nickname as author_nickname
 from public.player_ratings r
+left join public.players pl on pl.id = r.rater_id
 where r.comment is not null and length(trim(r.comment)) > 0;
 
 -- Tutti i "punti MoM": assegnazioni manuali + MVP da votazione (solo partite valide)
