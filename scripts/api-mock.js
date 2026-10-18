@@ -1,10 +1,14 @@
 // Mock di api.js per i test UI (iniettato da Playwright al posto di web/api.js).
-// Simula un utente loggato con ruolo scelto via ?role=admin|scorekeeper|player
+// Simula un utente loggato con ruolo scelto via ?role=admin|coach|scorekeeper|player|pending|rejected (?role=anon: non loggato)
 export const DEMO = false;
 let D;
 const role = new URLSearchParams(location.search).get("role") || "admin";
 const uid = () => crypto.randomUUID();
-export async function init() { D = await (await fetch("./demo-data.json")).json(); D.ratings = []; D.invites = []; D.profiles = []; const cur = new URLSearchParams(location.search).get("cur") || "2025/2026"; D.seasons.forEach((s) => s.is_current = s.name === cur); }
+export async function init() { D = await (await fetch("./demo-data.json")).json(); D.ratings = []; D.profiles = [
+    { id: "u1", email: "test@example.com", role: "admin", status: "approved", player_id: null, created_at: "2026-10-01T10:00:00Z" },
+    { id: "u2", email: "thor@example.com", role: "player", status: "pending", requested_nickname: "thor", requested_full_name: "Tommaso Rossi", created_at: "2026-10-17T10:00:00Z" },
+    { id: "u3", email: "nuovo@example.com", role: "player", status: "pending", requested_nickname: "Fulmine", requested_full_name: "Luca Bianchi", created_at: "2026-10-18T09:00:00Z" },
+    { id: "u4", email: "spam@example.com", role: "player", status: "rejected", requested_nickname: "Boh", requested_full_name: "X", created_at: "2026-10-16T09:00:00Z" }]; const cur = new URLSearchParams(location.search).get("cur") || "2025/2026"; D.seasons.forEach((s) => s.is_current = s.name === cur); }
 const seasonOf = (id) => D.seasons.find((s) => s.id === id);
 const recompute = () => {
   for (const m of D.v_matches) {
@@ -15,9 +19,13 @@ const recompute = () => {
 };
 const myPlayerId = () => D.players.find((p) => p.nickname === "Thor").id;
 export const auth = {
-  async user() { return { id: "u1", email: "test@example.com" }; },
-  onChange() {}, async signIn() {}, async signUp() {}, async magicLink() {}, async signOut() {},
-  async me() { return { user_id: "u1", email: "test@example.com", role, player_id: role === "admin" ? null : myPlayerId(), nickname: role === "admin" ? null : "Thor" }; },
+  async user() { return role === "anon" ? null : { id: "u1", email: "test@example.com" }; },
+  onChange() {}, async signIn() {}, async signOut() {}, async magicLink() {},
+  async signUp(email, password, nickname, fullName) { window.__signup = { email, nickname, fullName }; },
+  async me() {
+    if (["pending", "rejected"].includes(role)) return { user_id: "u1", email: "test@example.com", role: null, player_id: null, status: role, requested_nickname: "Nuovo", requested_full_name: "Mario Rossi" };
+    return { user_id: "u1", email: "test@example.com", role, status: "approved", player_id: role === "admin" ? null : myPlayerId(), nickname: role === "admin" ? null : "Thor" };
+  },
 };
 export async function getSettings() { return Object.fromEntries(D.settings.map((s) => [s.key, s.value])); }
 export async function getSeasons() { return [...D.seasons].sort((a, b) => b.starts_on.localeCompare(a.starts_on)); }
@@ -33,7 +41,10 @@ export async function getMatchRatings(id) {
 }
 export async function getComments({ matchId }) { return D.ratings.filter((r) => r.match_id === matchId && r.comment).map((r) => ({ match_id: r.match_id, player_id: r.rated_id, score: r.score, comment: r.comment, created_at: new Date().toISOString() })); }
 export async function getPlayerSeasons(pid) { return D.v_standings.filter((r) => r.player_id === pid && r.played > 0); }
-export async function getPlayerMatches() { return []; }
+export async function getPlayerMatches(pid) {
+  recompute(); const mps = D.match_players.filter((mp) => mp.player_id === pid);
+  return mps.map((mp) => ({ ...D.v_matches.find((m) => m.id === mp.match_id), team: mp.team })).sort((a, b) => b.played_on.localeCompare(a.played_on));
+}
 export async function getHallOfFame() { return D.hall_of_fame; }
 export async function saveMatch({ id, seasonId, playedOn, result, bianca, nera, notes, scoreBianca = null, scoreNera = null }) {
   const sc = { score_bianca: scoreBianca, score_nera: scoreNera };
@@ -52,9 +63,6 @@ export async function deleteRating(id) { D.ratings = D.ratings.filter((r) => r.i
 export async function upsertPlayer(p) { if (p.id) Object.assign(D.players.find((x) => x.id === p.id), p); else D.players.push({ id: uid(), active: true, ...p }); }
 export async function upsertSeason(s) { if (s.id) Object.assign(seasonOf(s.id), s); else D.seasons.push({ id: uid(), is_current: false, ...s }); }
 export async function setCurrentSeason(id) { D.seasons.forEach((s) => s.is_current = s.id === id); }
-export async function getInvites() { return D.invites; }
-export async function upsertInvite(i) { D.invites = D.invites.filter((x) => x.email !== i.email); D.invites.push(i); }
-export async function deleteInvite(e) { D.invites = D.invites.filter((x) => x.email !== e); }
 export async function getProfiles() { return D.profiles; }
 export async function updateProfile() {}
 export async function saveSetting(k, v) { const s = D.settings.find((x) => x.key === k); if (s) s.value = v; else D.settings.push({ key: k, value: v }); }
@@ -64,4 +72,16 @@ export async function getSkills(id) { return (D.skills ||= {})[id] || null; }
 export async function saveSkills(id, v) {
   if (!["admin", "coach"].includes(role)) throw new Error("new row violates row-level security policy for table \"player_skills\"");
   (D.skills ||= {})[id] = { player_id: id, ...v }; window.__skills = D.skills[id];
+}
+export async function approveRegistration(id, role) {
+  const p = D.profiles.find((x) => x.id === id);
+  let pl = D.players.find((x) => x.nickname.toLowerCase() === p.requested_nickname.toLowerCase());
+  if (!pl) { pl = { id: uid(), nickname: p.requested_nickname, full_name: p.requested_full_name, active: true }; D.players.push(pl); }
+  Object.assign(p, { status: "approved", role, player_id: pl.id }); window.__approved = { id, player: pl.nickname, role };
+}
+export async function rejectRegistration(id) { Object.assign(D.profiles.find((x) => x.id === id), { status: "rejected", player_id: null }); }
+export async function deleteUser(id) { D.profiles = D.profiles.filter((x) => x.id !== id); window.__deleted = id; }
+export async function getPlayerMatchRatings(pid) {
+  // voti finti deterministici: media 4-9 su ogni partita giocata, MVP sulle medie >= 8.5
+  return D.match_players.filter((mp) => mp.player_id === pid).map((mp, i) => { const v = 4 + ((i * 7) % 11) / 2; return { match_id: mp.match_id, player_id: pid, avg_score: v, votes: 3 + (i % 4), is_mvp: v >= 8.5 }; });
 }

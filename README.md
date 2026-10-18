@@ -22,7 +22,7 @@ scripts/                  script di supporto e test (non servono per usare l'app
 * **Pubblico (senza login)**: classifica Impegno Costante, Coppa Efficienza, classifica MVP, tabellini, profili giocatori (con il radar delle caratteristiche: Lancio, Ricezione, Taglio, Difesa, Velocità, Resistenza, da 0 a 5, modificabile solo da organizzatori e allenatori), albo d'oro, regolamento.
 * **Giocatore**: dopo una partita in cui ha giocato vota i compagni (1–10 + commento) per N giorni a partire dal giorno della partita (7 = fino al giorno prima della partita successiva: con le partite del venerdì si vota fino al giovedì). I voti sono anonimi: gli altri vedono solo media e commenti. Alla **chiusura delle votazioni** chi ha la media più alta (con almeno N voti; a pari media più giocatori) è l'**MVP** della partita e prende il punto "Man of the Match".
 * **Score keeper** e **Allenatore**: inseriscono e correggono i tabellini (squadra bianca/nera, vincente, punteggio), assegnano eventuali MoM manuali.
-* **Organizzatore (admin)**: tutto quanto sopra, più anagrafica giocatori, inviti/ruoli, stagioni e loro parametri, testi e albo d'oro.
+* **Organizzatore (admin)**: tutto quanto sopra, più anagrafica giocatori, approvazione delle registrazioni, ruoli ed eliminazione account, stagioni e loro parametri, testi e albo d'oro.
 
 Le regole (punti per vittoria/pareggio/MoM, minimo giocatori per partita valida, partite minime per coppa ed efficienza, giorni di voto, voti minimi per l'MVP) sono **parametri di ogni stagione**, modificabili dall'area admin.
 La sicurezza è nel database (Row Level Security): anche chi manomette il sito non può scrivere ciò che il suo ruolo non consente.
@@ -34,7 +34,7 @@ La sicurezza è nel database (Row Level Security): anche chi manomette il sito n
 1. Vai su https://supabase.com, crea un account gratuito e un nuovo progetto (regione EU, scegli una password per il database e conservala).
 2. Nel menu laterale apri **SQL Editor** → *New query*, incolla il contenuto di `supabase/migrations/0001_schema.sql` e premi **Run**.
 3. Stessa cosa con `supabase/migrations/0002_seed.sql` (importa giocatori, stagione 2025/26, albo d'oro e regolamento).
-   Poi esegui, in ordine, anche `0003_match_score.sql` (punteggio facoltativo), `0004_storico_2023_24_q2.sql` (storico 2023/24, 2° quadrimestre) , `0005_coach_mvp_chiusura.sql` (ruolo allenatore, MVP alla chiusura del voto) `0006_player_skills.sql` (radar delle caratteristiche) e `0007_skills_resistenza.sql` (sesto asse: resistenza).
+   Poi esegui, in ordine, anche `0003_match_score.sql` (punteggio facoltativo), `0004_storico_2023_24_q2.sql` (storico 2023/24, 2° quadrimestre), `0005_coach_mvp_chiusura.sql` (ruolo allenatore, MVP alla chiusura del voto), `0006_player_skills.sql` (radar delle caratteristiche), `0007_skills_resistenza.sql` (sesto asse: resistenza) e `0008_registrazioni.sql` (registrazione con approvazione al posto degli inviti).
 4. **Authentication → Providers → Email**: lascia attivo Email. Consiglio per semplicità: disattiva *Confirm email* (così i giocatori entrano subito dopo la registrazione) oppure lascialo attivo se preferisci la verifica.
 5. **Authentication → URL Configuration**: in *Site URL* metti l'indirizzo del sito (dopo il passo 2 di GitHub Pages, es. `https://tuonome.github.io/coppa-impegno-costante/`) e aggiungilo anche a *Redirect URLs*. Serve per i link di accesso via email.
 6. **Project Settings → API**: copia *Project URL* e la chiave *anon public*.
@@ -51,9 +51,11 @@ La chiave *anon* è fatta per stare nel sito pubblico: non dà nessun potere olt
 
 ### 3. Primo accesso e ruoli
 
-1. Apri il sito, vai su **Area → Registrati** con la tua email: **il primo utente registrato diventa automaticamente Organizzatore**.
-2. In *Area → Amministrazione → Utenti e inviti* aggiungi gli **inviti**: email del giocatore → nickname → ruolo (Giocatore, Allenatore, Score keeper o Organizzatore). Quando quella persona si registra con la stessa email viene collegata al suo giocatore con il ruolo giusto. Puoi anche cambiare ruolo e giocatore agli utenti già registrati.
-3. In *Stagioni* controlla la stagione in corso (è già creata la 2026/2027 con le regole del regolamento: 12 giocatori per partita valida, 5 partite per l'efficienza). La 2025/2026 è importata con soglia 0 giocatori e 4 partite per l'efficienza, in modo da riprodurre esattamente la classifica dell'Excel.
+1. Apri il sito, vai su **Area → Registrati** e inserisci nickname, nome e cognome, email e password: **il primo utente registrato diventa automaticamente Organizzatore**.
+2. Gli altri si registrano allo stesso modo e restano **in attesa**: in *Area → Amministrazione → Utenti* l'organizzatore vede le richieste e le **accetta** (scegliendo il ruolo: Giocatore, Allenatore, Score keeper o Organizzatore) o le **rifiuta**. Accettando, l'utente viene collegato al giocatore con lo stesso nickname; se il nickname non esiste, il giocatore viene creato. Finché non è accettato, un utente non ha alcun potere (lo impone il database).
+3. Sempre da *Utenti* si cambiano ruolo e giocatore collegato e si **elimina un account** (il giocatore e le sue statistiche restano).
+   In *Radar* l'organizzatore rinomina i sei assi del radar delle caratteristiche (anteprima dal vivo; vuoto = nome predefinito).
+4. In *Stagioni* controlla la stagione in corso e le sue regole.
 
 ## Flusso del venerdì
 

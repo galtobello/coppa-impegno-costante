@@ -1,5 +1,5 @@
-import * as api from "./api.js?v=202610171933";
-import { DEMO } from "./api.js?v=202610171933";
+import * as api from "./api.js?v=202610181102";
+import { DEMO } from "./api.js?v=202610181102";
 
 // ============================================================== stato & utilità
 const S = {
@@ -72,7 +72,7 @@ function renderNav() {
 }
 function markNav(hash) {
   const base = "#/" + (hash.split("/")[1] || "");
-  const alias = { "#/storico": "#/", "#/partita": "#/partite", "#/giocatore": "#/giocatori", "#/vota": "#/area", "#/tabellino": "#/area", "#/login": "#/area" };
+  const alias = { "#/storico": "#/", "#/partita": "#/partite", "#/giocatore": "#/giocatori", "#/vota": "#/area", "#/tabellino": "#/area", "#/login": "#/area", "#/registrati": "#/area" };
   const act = alias[base] || base;
   document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("active", a.dataset.h === act));
 }
@@ -94,7 +94,7 @@ const routes = [
   [/^#\/giocatore\/([\w-]+)$/, viewPlayer],
   [/^#\/albo$/, viewHallOfFame],
   [/^#\/regolamento$/, viewRules],
-  [/^#\/login$/, viewLogin],
+  [/^#\/(login|registrati)$/, viewLogin],
   [/^#\/area$/, viewArea],
   [/^#\/tabellino(?:\/([\w-]+))?$/, viewScoreForm],
   [/^#\/vota\/([\w-]+)$/, viewVote],
@@ -259,10 +259,21 @@ async function viewMatch(id) {
 }
 
 // ============================================================== CARATTERISTICHE (radar 0–5)
-const SKILLS = [["lancio", ["Lancio"]], ["ricezione", ["Ricezione"]], ["taglio", ["Taglio"]], ["difesa", ["Difesa"]], ["velocita", ["Velocità"]], ["resistenza", ["Resistenza"]]];
+// assi del radar: le chiavi sono fisse (colonne del database), le etichette le sceglie l'organizzatore
+const SKILL_DEFAULTS = { lancio: "Lancio", ricezione: "Ricezione", taglio: "Taglio", difesa: "Difesa", velocita: "Velocità", resistenza: "Resistenza" };
+const skillLabel = (k, labels = S.settings.skill_labels) => (labels?.[k] || "").trim() || SKILL_DEFAULTS[k];
+// etichette lunghe su due righe, spezzate allo spazio più vicino a metà
+const wrapLabel = (t) => {
+  if (t.length <= 12 || !t.includes(" ")) return [t];
+  const sp = [...t].map((c, i) => c === " " ? i : -1).filter((i) => i > 0);
+  const cut = sp.reduce((a, b) => Math.abs(b - t.length / 2) < Math.abs(a - t.length / 2) ? b : a);
+  return [t.slice(0, cut), t.slice(cut + 1)];
+};
+const skillDefs = (labels) => Object.keys(SKILL_DEFAULTS).map((k) => [k, wrapLabel(skillLabel(k, labels))]);
 const canEditSkills = () => ["admin", "coach"].includes(S.me?.role);
 
-function radarSvg(v) {
+function radarSvg(v, axisLabels) {
+  const SKILLS = skillDefs(axisLabels);
   const cx = 200, cy = 170, R = 120, n = SKILLS.length;
   const pt = (i, r) => { const a = (-90 + (360 / n) * i) * Math.PI / 180; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; };
   const poly = (r) => SKILLS.map((_, i) => pt(i, typeof r === "function" ? r(i) : r).map((x) => x.toFixed(1)).join(",")).join(" ");
@@ -284,15 +295,16 @@ function radarSvg(v) {
     <polygon class="r-area" points="${poly(val)}"/>${dots}${labels}</svg>`;
 }
 // adatta il viewBox al contenuto reale (etichette comprese): il radar usa tutta la larghezza disponibile
-function fitRadar() {
-  const svg = $("#radar svg"); if (!svg) return;
+function fitRadar(sel = "#radar svg") {
+  const svg = $(sel); if (!svg) return;
   try { const b = svg.getBBox(), pad = 6; svg.setAttribute("viewBox", `${b.x - pad} ${b.y - pad} ${b.width + 2 * pad} ${b.height + 2 * pad}`); } catch {}
 }
 
 function skillsCard(playerId, skills) {
+  const SKILLS = skillDefs();
   const v = Object.fromEntries(SKILLS.map(([k]) => [k, skills?.[k] ?? 0]));
   const edit = canEditSkills() && !DEMO;
-  setTimeout(() => { fitRadar(); document.fonts?.ready.then(fitRadar); });
+  setTimeout(() => { fitRadar(); document.fonts?.ready.then(() => fitRadar()); });
   if (edit) setTimeout(() => {
     const box = $("#skills"); if (!box) return;
     box.addEventListener("click", (e) => {
@@ -341,21 +353,35 @@ async function viewPlayers() {
 async function viewPlayer(id) {
   const p = S.pmap.get(id);
   if (!p) return `<div class="empty">Giocatore non trovato.</div>`;
-  const [seasons, matches, comments, skills] = await Promise.all([api.getPlayerSeasons(id), api.getPlayerMatches(id), api.getComments({ playerId: id }), api.getSkills(id).catch(() => null)]);
+  const [seasons, matches, comments, skills, myRatings] = await Promise.all([api.getPlayerSeasons(id), api.getPlayerMatches(id), api.getComments({ playerId: id }), api.getSkills(id).catch(() => null), api.getPlayerMatchRatings(id).catch(() => [])]);
   const ratingsBySeason = {};
   for (const s of S.seasons) ratingsBySeason[s.id] = (await api.getSeasonRatings(s.id)).find((r) => r.player_id === id);
   const cur = seasons.find((s) => s.season_id === S.season?.id) || seasons[0];
-  const tl = matches.filter((m) => m.season_id === (cur?.season_id)).sort((a, b) => a.played_on.localeCompare(b.played_on))
-    .map((m) => `<i class="${!m.result || !m.is_valid ? "" : m.result === "pareggio" ? "n" : m.result === m.team ? "v" : "p"}" title="${fmtShort(m.played_on)}: ${m.result ? (m.result === "pareggio" ? "pareggio" : m.result === m.team ? "vittoria" : "sconfitta") : "da registrare"}${m.is_valid ? "" : " (non valida)"}"></i>`).join("");
+  // andamento: per ogni partita della stagione risultato (quadratino) e media dei voti ricevuti (barra)
+  const rByMatch = Object.fromEntries(myRatings.map((r) => [r.match_id, r]));
+  const seasonMatches = matches.filter((m) => m.season_id === cur?.season_id).sort((a, b) => a.played_on.localeCompare(b.played_on));
+  const outcome = (m) => !m.result || !m.is_valid ? ["x", "–", m.result ? "non valida" : "da registrare"] : m.result === "pareggio" ? ["n", "N", "pareggio"] : m.result === m.team ? ["v", "V", "vittoria"] : ["p", "P", "sconfitta"];
+  const voteCls = (v) => v >= 7 ? "hi" : v >= 5.5 ? "mid" : "lo";
+  const trend = seasonMatches.map((m) => {
+    const [cls, letter, label] = outcome(m), r = rByMatch[m.id], v = r ? Number(r.avg_score) : null;
+    return `<a class="am" href="#/partita/${m.id}" title="${fmtDate(m.played_on)}: ${label}${v != null ? ` · media voti ${v.toFixed(2)} (${r.votes})` : ""}">
+      <span class="am-date">${fmtShort(m.played_on)}</span><span class="am-res ${cls}">${letter}</span>
+      <span class="am-bar">${v != null ? `<i class="${voteCls(v)}" style="height:${v * 10}%"></i>` : ""}</span>
+      <span class="am-vote ${v != null ? voteCls(v) : ""}">${v != null ? v.toFixed(1) : "–"}</span><span class="am-mvp">${r?.is_mvp ? "⭐" : ""}</span></a>`;
+  }).join("");
+  const voted = seasonMatches.map((m) => rByMatch[m.id]).filter(Boolean);
   const rr = cur ? ratingsBySeason[cur.season_id] : null;
+  setTimeout(() => { const t = $("#trend"); if (t) t.scrollLeft = t.scrollWidth; });
   return `<div class="page-head"><div class="grow row">${avatar(p.nickname, "lg")}<div><h3>Giocatore</h3><h1>${esc(p.nickname)}</h1>${p.full_name ? `<div class="muted">${esc(p.full_name)}</div>` : ""}</div></div></div>
     ${skillsCard(id, skills)}
     ${cur ? `<div class="card"><h2>Stagione ${esc(cur.season_name)}</h2>
       <div class="stats"><div class="stat"><b>${cur.rank_points}°</b><span>posizione</span></div><div class="stat"><b>${cur.points}</b><span>punti</span></div><div class="stat"><b>${cur.played}</b><span>giocate</span></div>
         <div class="stat"><b>${cur.wins}</b><span>vinte</span></div><div class="stat"><b>${cur.losses}</b><span>perse</span></div><div class="stat"><b>${cur.mom}</b><span>MoM/MVP</span></div>
         <div class="stat"><b>${Number(cur.efficiency).toFixed(0)}%</b><span>efficienza</span></div>${rr ? `<div class="stat"><b>${Number(rr.avg_score).toFixed(2)}</b><span>media voti</span></div>` : ""}</div>
-      <h3 style="margin-top:1rem">Andamento</h3><div class="timeline">${tl || '<span class="muted small">Nessuna partita</span>'}</div>
-      <div class="legend" style="margin-top:.4rem"><span>🟩 vittoria</span><span>🟨 pareggio</span><span>🟥 sconfitta</span></div></div>` : `<div class="card"><p class="muted">Non ha ancora giocato partite.</p></div>`}
+</div>
+    <div class="card" style="margin-top:1rem"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Andamento</h2><span class="small muted">${seasonMatches.length} partite · ${voted.length} con voti</span></div>
+      ${seasonMatches.length ? `<div class="trend" id="trend">${trend}</div>
+      <div class="legend"><span><i class="lgd v"></i>vittoria</span><span><i class="lgd n"></i>pareggio</span><span><i class="lgd p"></i>sconfitta</span><span><i class="lgd x"></i>non valida</span><span>barra = media voti ricevuti · ⭐ MVP</span></div>` : '<p class="muted">Nessuna partita in questa stagione.</p>'}</div>` : `<div class="card"><p class="muted">Non ha ancora giocato partite.</p></div>`}
     <div class="grid cols-2" style="margin-top:1rem">
       <div class="card"><h2>Tutte le stagioni</h2><div class="table-wrap" style="box-shadow:none"><table><thead><tr><th class="name">Stagione</th><th>#</th><th>G</th><th>V</th><th>P</th><th>MoM</th><th>Pt</th></tr></thead><tbody>
         ${seasons.sort((a, b) => b.season_name.localeCompare(a.season_name)).map((s) => `<tr><td class="name">${esc(s.season_name)}</td><td>${s.rank_points}</td><td>${s.played}</td><td>${s.wins}</td><td>${s.losses}</td><td>${s.mom}</td><td class="pts">${s.points}</td></tr>`).join("") || '<tr><td colspan="7" class="muted">—</td></tr>'}</tbody></table></div></div>
@@ -373,9 +399,38 @@ async function viewHallOfFame() {
       <div><h3>⚡ Efficienza</h3><div class="winner">${esc(r.efficienza_winner || "–")}</div><div class="small muted">${esc(r.efficienza_detail || "")}</div></div></div></div>`).join("") || '<div class="empty">Vuoto.</div>'}</div>`;
 }
 async function viewRules() {
-  const s = S.season;
+  const s = currentSeason() || S.season;
+  const vd = s?.voting_days ?? 7, mv = s?.min_votes_mvp ?? 3;
+  const myRole = S.me?.status === "approved" ? S.me.role : null;
+  const guide = [
+    ["all", "👀 Tutti (anche senza accesso)", `<ul>
+      <li><b>Classifica</b>: la stagione in corso con tutta la rosa (anche a 0 punti) e, nella scheda <b>Storico</b>, le stagioni passate. Sotto-schede Impegno, Efficienza e MVP.</li>
+      <li><b>Partite</b>: tutti i tabellini con squadre, risultato, punteggio, MVP e commenti anonimi.</li>
+      <li><b>Giocatori</b>: cerca un giocatore e apri la sua scheda: caratteristiche (radar), statistiche della stagione, andamento partita per partita con i voti ricevuti.</li>
+      <li><b>Albo d'oro</b> e <b>Regolamento</b>.</li></ul>`],
+    ["player", "🥏 Giocatore", `<ol>
+      <li><b>Registrati</b> da <i>Area → Registrati</i> con nickname (quello usato in squadra), nome e cognome, email e password.</li>
+      <li>Aspetta che l'organizzatore <b>accetti la richiesta</b>: verrai collegato al tuo giocatore.</li>
+      <li>Dopo ogni partita in cui hai giocato, in <i>Area</i> trovi <b>Vota i compagni</b>: tocca un voto da 1 a 10 per chi vuoi valutare, divisi tra la tua squadra e gli avversari, con un commento facoltativo. Chi non tocchi non riceve voti.</li>
+      <li>Si vota per <b>${vd} giorni</b> dal giorno della partita (con le partite del venerdì, fino al giovedì) e puoi modificare i voti fino alla chiusura. I voti sono <b>anonimi</b>.</li>
+      <li>Alla chiusura diventa <b>MVP</b> chi ha la media più alta (con almeno ${mv} voti; a pari media più MVP) e prende il punto Man of the Match.</li></ol>`],
+    ["coach", "📋 Allenatore", `<p>Tutto quello che fa il giocatore, più:</p><ul>
+      <li><b>Tabellini</b>: <i>Area → Nuovo tabellino</i> (o il "+" nella pagina Partite). Stagione e data sono già quelle di oggi; scegli il risultato e, se vuoi, il punteggio (il risultato si calcola da solo). Poi seleziona "Aggiungi a Bianca/Nera" e tocca i nomi: compaiono subito nella squadra; × per toglierli.</li>
+      <li><b>MoM manuali</b>: in <i>Area</i> puoi assegnare un Man of the Match in più (+1 punto).</li>
+      <li><b>Caratteristiche</b>: nella scheda di ogni giocatore imposti i valori da 0 a 5 del radar (Lancio, Ricezione, Taglio, Difesa, Velocità, Resistenza).</li></ul>`],
+    ["scorekeeper", "✍️ Score keeper", `<ul><li>Inserisce e corregge i <b>tabellini</b> e assegna i <b>MoM manuali</b>, come l'allenatore (ma non modifica le caratteristiche).</li></ul>`],
+    ["admin", "⚙️ Organizzatore", `<p>Tutto quanto sopra, più <i>Area → Amministrazione</i>:</p><ul>
+      <li><b>Utenti</b>: accetta o rifiuta le <b>richieste di registrazione</b>. Accettando, l'utente viene collegato al giocatore con lo stesso nickname, o il giocatore viene creato. Qui assegni i ruoli (Giocatore, Allenatore, Score keeper, Organizzatore) ed elimini un account (il giocatore e le sue statistiche restano).</li>
+      <li><b>Giocatori</b>: anagrafica e giocatori attivi.</li>
+      <li><b>Stagioni</b>: date e regole (punti, minimo giocatori, giorni di voto, voti minimi per l'MVP) e stagione in corso.</li>
+      <li><b>Testi e albo</b>: regolamento, nome del club e albo d'oro. Può anche eliminare le partite.</li></ul>`],
+  ];
   return `<div class="page-head"><div class="grow"><h3>Regole</h3><h1>Regolamento</h1></div></div>
     <div class="card"><div class="regola">${esc(S.settings.regolamento || "Regolamento non ancora inserito.")}</div></div>
+    <section class="card guide" style="margin-top:1rem"><h2>Come usare il sito</h2>
+      <p class="small muted">Tocca il tuo ruolo per vedere cosa puoi fare.${myRole ? ` Tu sei: <b>${ROLE_LABEL[myRole]}</b>.` : ""}</p>
+      ${guide.map(([k, t, body]) => `<details ${k === (myRole || "all") ? "open" : ""}><summary>${t}</summary><div class="guide-body">${body}</div></details>`).join("")}
+    </section>
     ${s ? `<div class="card" style="margin-top:1rem"><h2>Parametri stagione ${esc(s.name)}</h2><div class="stats">
       <div class="stat"><b>${s.points_win}</b><span>pt vittoria</span></div><div class="stat"><b>${s.points_draw}</b><span>pt pareggio</span></div><div class="stat"><b>${s.points_mom}</b><span>pt MVP</span></div>
       <div class="stat"><b>${s.min_players_valid}</b><span>min giocatori</span></div><div class="stat"><b>${s.min_matches_ranking}</b><span>gg per la coppa</span></div><div class="stat"><b>${s.min_matches_efficiency}</b><span>gg efficienza</span></div>
@@ -383,21 +438,41 @@ async function viewRules() {
 }
 
 // ============================================================== LOGIN
-async function viewLogin() {
+async function viewLogin(mode) {
   if (DEMO) return `<div class="card login-box"><span class="logo" role="img" aria-label="Disc &amp; Disc"></span><h2>Modalità demo</h2><p class="muted">Il login si attiva collegando un progetto Supabase in <code>config.js</code>.</p></div>`;
   if (S.user) { location.hash = "#/area"; return ""; }
+  const signup = mode === "registrati";
   setTimeout(() => {
     const f = $("#login-form");
-    f.onsubmit = (e) => { e.preventDefault(); guard(async () => { await api.auth.signIn(f.email.value.trim(), f.password.value); toast("Bentornato!"); location.hash = "#/area"; }); };
-    $("#btn-signup").onclick = () => guard(async () => {
-      if (!f.email.value || f.password.value.length < 6) throw new Error("Inserisci email e una password di almeno 6 caratteri");
-      await api.auth.signUp(f.email.value.trim(), f.password.value); toast("Registrazione inviata: controlla l'email per confermare (se richiesto), poi accedi.");
+    f.onsubmit = (e) => { e.preventDefault(); guard(async () => {
+      const email = f.email.value.trim();
+      if (signup) {
+        const nickname = f.nickname.value.trim(), fullName = f.full_name.value.trim();
+        if (!nickname || !fullName) throw new Error("Inserisci nickname e nome e cognome");
+        if (f.password.value.length < 6) throw new Error("La password deve avere almeno 6 caratteri");
+        await api.auth.signUp(email, f.password.value, nickname, fullName);
+        $("#app").innerHTML = `<div class="card login-box"><span class="logo" role="img" aria-label="Disc &amp; Disc"></span><h2>Richiesta inviata</h2>
+          <p>Grazie <b>${esc(nickname)}</b>! Se ti arriva un'email di conferma, apri il link. Poi l'organizzatore deve <b>accettare la registrazione</b>: da quel momento potrai votare i compagni.</p><a class="btn" href="#/login">Torna all'accesso</a></div>`;
+        return;
+      }
+      await api.auth.signIn(email, f.password.value); toast("Bentornato!"); location.hash = "#/area";
+    }); };
+    const ml = $("#btn-magic"); if (ml) ml.onclick = () => guard(async () => {
+      if (!f.email.value) throw new Error("Inserisci l'email");
+      await api.auth.magicLink(f.email.value.trim()); toast("Se l'email è registrata ti arriva un link di accesso.");
     });
-    $("#btn-magic").onclick = () => guard(async () => { if (!f.email.value) throw new Error("Inserisci l'email"); await api.auth.magicLink(f.email.value.trim()); toast("Ti ho inviato un link di accesso via email."); });
   });
-  return `<div class="card login-box"><span class="logo" role="img" aria-label="Disc &amp; Disc"></span><h2>Accedi</h2><p class="small muted">Usa l'email che hai comunicato all'organizzatore: verrai collegato automaticamente al tuo giocatore.</p>
-    <form id="login-form"><label>Email</label><input type="email" name="email" required autocomplete="email" /><label>Password</label><input type="password" name="password" autocomplete="current-password" />
-      <div class="row" style="margin-top:1rem"><button class="btn primary" type="submit">Accedi</button><button class="btn" type="button" id="btn-signup">Registrati</button><button class="btn" type="button" id="btn-magic">Link via email</button></div></form></div>`;
+  return `<div class="card login-box"><span class="logo" role="img" aria-label="Disc &amp; Disc"></span>
+    <div class="tabs seg" style="margin:0 auto 1rem"><a class="${signup ? "" : "active"}" href="#/login">Accedi</a><a class="${signup ? "active" : ""}" href="#/registrati">Registrati</a></div>
+    <p class="small muted">${signup ? "Dopo la registrazione l'organizzatore accetta la richiesta e ti collega al tuo giocatore (o lo crea, se il nickname è nuovo)." : "Accedi con email e password."}</p>
+    <form id="login-form">
+      ${signup ? `<label>Nickname</label><input type="text" name="nickname" required maxlength="40" autocomplete="nickname" placeholder="come ti chiamano in squadra" />
+      <label>Nome e cognome</label><input type="text" name="full_name" required maxlength="80" autocomplete="name" />` : ""}
+      <label>Email</label><input type="email" name="email" required autocomplete="email" />
+      <label>Password</label><input type="password" name="password" required minlength="6" autocomplete="${signup ? "new-password" : "current-password"}" />
+      <button class="btn primary" type="submit" style="width:100%;margin-top:1rem">${signup ? "Invia richiesta di registrazione" : "Accedi"}</button>
+      ${signup ? "" : '<button class="btn" type="button" id="btn-magic" style="width:100%;margin-top:.5rem">Accedi con un link via email</button>'}
+    </form></div>`;
 }
 
 // ============================================================== AREA RISERVATA
@@ -405,7 +480,15 @@ async function viewArea() {
   if (DEMO) return viewLogin();
   if (!S.user) { location.hash = "#/login"; return ""; }
   const me = S.me;
+  if (me && me.status !== "approved") {
+    setTimeout(() => { $("#btn-logout").onclick = () => guard(async () => { await api.auth.signOut(); location.hash = "#/"; }); });
+    return `<div class="card login-box"><span class="logo" role="img" aria-label="Disc &amp; Disc"></span>
+      ${me.status === "pending" ? `<h2>Registrazione in attesa</h2><p>Hai chiesto di entrare come <b>${esc(me.requested_nickname || "?")}</b>${me.requested_full_name ? ` (${esc(me.requested_full_name)})` : ""}. L'organizzatore deve accettare la richiesta: poi potrai votare i compagni.</p>`
+        : `<h2>Registrazione non accettata</h2><p class="muted">L'organizzatore non ha accettato la richiesta. Se pensi sia un errore, parlane con lui.</p>`}
+      <p class="small muted">${esc(S.user.email)}</p><button class="btn" id="btn-logout">Esci</button></div>`;
+  }
   const roleLabel = ROLE_LABEL[me?.role] || "–";
+  const pending = isAdmin() ? (await api.getProfiles()).filter((p) => p.status === "pending").length : 0;
   // partite votabili per il giocatore
   let votable = [];
   if (myPlayer() && currentSeason()) {
@@ -423,22 +506,23 @@ async function viewArea() {
     if (tabs) tabs.querySelectorAll("button").forEach((b) => b.onclick = () => {
       tabs.querySelectorAll("button").forEach((x) => x.classList.toggle("active", x === b));
       document.querySelectorAll("[data-atab]").forEach((sec) => sec.classList.toggle("hidden", sec.dataset.atab !== b.dataset.t));
-      if (b.dataset.t === "players") renderAdminPlayers(); if (b.dataset.t === "users") renderAdminUsers(); if (b.dataset.t === "seasons") renderAdminSeasons(); if (b.dataset.t === "texts") renderAdminTexts();
+      if (b.dataset.t === "players") renderAdminPlayers(); if (b.dataset.t === "users") renderAdminUsers(); if (b.dataset.t === "seasons") renderAdminSeasons(); if (b.dataset.t === "texts") renderAdminTexts(); if (b.dataset.t === "radar") renderAdminRadar();
       if (b.dataset.t === "mom") renderMomAdmin();
     });
   });
   return `<div class="page-head"><div class="grow row">${avatar(me?.nickname || S.user.email, "lg")}<div><h3>${roleLabel}</h3><h1>${esc(me?.nickname || S.user.email)}</h1><div class="small muted">${esc(S.user.email)}</div></div></div><button class="btn" id="btn-logout">Esci</button></div>
-    ${!me?.player_id ? `<div class="card" style="margin-bottom:1rem"><h2>Account non collegato a un giocatore</h2><p class="muted">Chiedi all'organizzatore di associare la tua email (${esc(S.user.email)}) al tuo nickname: potrai votare i compagni dopo le partite.</p></div>` : ""}
+    ${!me?.player_id ? `<div class="card" style="margin-bottom:1rem"><h2>Account non collegato a un giocatore</h2><p class="muted">Chiedi all'organizzatore di collegare il tuo account (${esc(S.user.email)}) al tuo nickname: potrai votare i compagni dopo le partite.</p></div>` : ""}
     <div class="grid cols-2">
       ${me?.player_id ? `<div class="card"><h2>⭐ Vota i compagni</h2>${votable.length ? votable.map((m) => `<div class="row" style="justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--line)"><span>${fmtDate(m.played_on)} <span class="small muted">entro ${fmtShort(lastVoteDay(m))}</span></span><a class="btn sm primary" href="#/vota/${m.id}">Vota</a></div>`).join("") : `<p class="muted">Nessuna partita con votazioni aperte in cui hai giocato. Si vota per ${currentSeason()?.voting_days ?? 7} giorni a partire dal giorno della partita.</p>`}</div>` : ""}
       ${canScore() ? `<div class="card"><h2>📋 Tabellini</h2><p class="muted small">Registra la partita del venerdì: squadre, vincente e, se serve, MoM assegnati a mano.</p><div class="row"><a class="btn primary" href="#/tabellino">+ Nuovo tabellino</a><a class="btn" href="#/partite">Elenco partite</a></div></div>` : ""}
     </div>
     ${isAdmin() ? `<div style="margin-top:1.5rem"><h2>Amministrazione</h2>
-      <div class="tabs" id="area-tabs"><button data-t="none" class="active">—</button><button data-t="players">Giocatori</button><button data-t="users">Utenti e inviti</button><button data-t="seasons">Stagioni</button><button data-t="mom">MoM manuali</button><button data-t="texts">Testi e albo</button></div>
+      <div class="tabs" id="area-tabs"><button data-t="none" class="active">—</button><button data-t="players">Giocatori</button><button data-t="users">Utenti${pending ? ` <span class="badge">${pending}</span>` : ""}</button><button data-t="seasons">Stagioni</button><button data-t="mom">MoM manuali</button><button data-t="radar">Radar</button><button data-t="texts">Testi e albo</button></div>
       <div data-atab="players" class="hidden card" style="margin-top:1rem" id="adm-players"></div>
       <div data-atab="users" class="hidden card" style="margin-top:1rem" id="adm-users"></div>
       <div data-atab="seasons" class="hidden card" style="margin-top:1rem" id="adm-seasons"></div>
       <div data-atab="mom" class="hidden card" style="margin-top:1rem" id="adm-mom"></div>
+      <div data-atab="radar" class="hidden card" style="margin-top:1rem" id="adm-radar"></div>
       <div data-atab="texts" class="hidden card" style="margin-top:1rem" id="adm-texts"></div></div>` : (canScore() ? `<div class="card" style="margin-top:1rem" id="adm-mom"></div>` : "")}`;
 }
 
@@ -457,25 +541,59 @@ async function renderAdminPlayers() {
   }));
 }
 
-// ---- admin: utenti e inviti
+// ---- admin: utenti e richieste di registrazione
 async function renderAdminUsers() {
   const el = $("#adm-users"); if (!el) return;
-  const [invites, profiles] = await Promise.all([api.getInvites(), api.getProfiles()]);
+  S.players = await api.getPlayers(); S.pmap = new Map(S.players.map((p) => [p.id, p]));
+  const profiles = await api.getProfiles();
   const roles = ["player", "coach", "scorekeeper", "admin"];
-  const playerOpts = (sel) => `<option value="">— nessuno —</option>` + S.players.map((p) => `<option value="${p.id}" ${p.id === sel ? "selected" : ""}>${esc(p.nickname)}</option>`).join("");
   const roleOpts = (sel) => roles.map((r) => `<option value="${r}" ${r === sel ? "selected" : ""}>${ROLE_LABEL[r]}</option>`).join("");
-  el.innerHTML = `<h2>Inviti</h2><p class="small muted">Associa un'email a un giocatore e a un ruolo: quando quella persona si registra con la stessa email viene collegata automaticamente.</p>
-    <form class="row" id="f-inv"><input type="email" name="email" placeholder="email" required style="max-width:240px" /><select name="player_id" style="max-width:180px">${playerOpts()}</select><select name="role" style="max-width:150px">${roleOpts("player")}</select><button class="btn primary">Aggiungi invito</button></form>
-    <div class="table-wrap" style="margin-top:.8rem;box-shadow:none"><table><thead><tr><th class="name">Email</th><th>Giocatore</th><th>Ruolo</th><th></th></tr></thead><tbody>${invites.map((i) => `<tr><td class="name">${esc(i.email)}</td><td>${esc(nick(i.player_id))}</td><td>${ROLE_LABEL[i.role] || i.role}</td><td><button class="btn sm danger" data-del="${esc(i.email)}">Elimina</button></td></tr>`).join("") || '<tr><td colspan="4" class="muted">Nessun invito</td></tr>'}</tbody></table></div>
+  const playerOpts = (sel) => `<option value="">— nessuno —</option>` + S.players.map((p) => `<option value="${p.id}" ${p.id === sel ? "selected" : ""}>${esc(p.nickname)}</option>`).join("");
+  const linkedTo = Object.fromEntries(profiles.filter((p) => p.player_id).map((p) => [p.player_id, p]));
+  const byNick = (n) => S.players.find((p) => p.nickname.toLowerCase() === (n || "").trim().toLowerCase());
+  const pending = profiles.filter((p) => p.status === "pending"), approved = profiles.filter((p) => p.status === "approved"), rejected = profiles.filter((p) => p.status === "rejected");
+  const when = (d) => d ? new Date(d).toLocaleDateString("it-IT", { day: "numeric", month: "short" }) : "";
+
+  // cosa succede accettando: collegamento a un giocatore esistente o creazione
+  const outcome = (p) => {
+    const pl = byNick(p.requested_nickname);
+    if (!p.requested_nickname) return `<span class="chip bad">senza nickname</span>`;
+    if (!pl) return `<span class="chip info">nuovo giocatore</span>`;
+    const other = linkedTo[pl.id];
+    return other && other.id !== p.id ? `<span class="chip bad">${esc(pl.nickname)} è già di ${esc(other.email)}</span>` : `<span class="chip ok">collega a ${esc(pl.nickname)}</span>`;
+  };
+  const reqCard = (p, isRejected) => `<div class="req" data-id="${p.id}">
+      <div class="req-main"><b>${esc(p.requested_nickname || "—")}</b> <span class="muted">${esc(p.requested_full_name || "")}</span>
+        <div class="small muted">${esc(p.email || "")} · ${when(p.created_at)}</div><div style="margin-top:.3rem">${outcome(p)}</div></div>
+      <div class="req-act"><select data-f="role" aria-label="Ruolo">${roleOpts("player")}</select>
+        <button class="btn sm primary" data-ok>Accetta</button>${isRejected ? `<button class="btn sm danger" data-del>Elimina</button>` : `<button class="btn sm danger" data-no>Rifiuta</button>`}</div></div>`;
+
+  el.innerHTML = `<h2>Richieste di registrazione ${pending.length ? `<span class="badge">${pending.length}</span>` : ""}</h2>
+    <p class="small muted">Accettando, l'utente viene collegato al giocatore con lo stesso nickname; se il nickname non esiste il giocatore viene creato.</p>
+    ${pending.map((p) => reqCard(p, false)).join("") || '<p class="muted">Nessuna richiesta in attesa.</p>'}
     <h2 style="margin-top:1.5rem">Utenti registrati</h2>
-    <div class="table-wrap" style="box-shadow:none"><table><thead><tr><th class="name">Email</th><th>Giocatore</th><th>Ruolo</th><th></th></tr></thead><tbody>${profiles.map((p) => `<tr data-id="${p.id}"><td class="name">${esc(p.email || "")}</td><td><select data-f="player_id" style="min-width:150px">${playerOpts(p.player_id)}</select></td><td><select data-f="role">${roleOpts(p.role)}</select></td><td><button class="btn sm" data-save>Salva</button></td></tr>`).join("")}</tbody></table></div>`;
-  $("#f-inv").onsubmit = (e) => { e.preventDefault(); guard(async () => {
-    if (!e.target.player_id.value) throw new Error("Scegli il giocatore");
-    await api.upsertInvite({ email: e.target.email.value.trim().toLowerCase(), player_id: e.target.player_id.value, role: e.target.role.value }); toast("Invito salvato"); renderAdminUsers(); }); };
-  el.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => guard(async () => { await api.deleteInvite(b.dataset.del); renderAdminUsers(); }));
+    <div class="users">${approved.map((p) => `<div class="req" data-id="${p.id}">
+      <div class="req-main"><b>${esc(p.email || "")}</b>${p.id === S.user.id ? ' <span class="chip">tu</span>' : ""}<div class="small muted">dal ${when(p.created_at)}</div></div>
+      <div class="req-act"><select data-f="player_id" aria-label="Giocatore">${playerOpts(p.player_id)}</select><select data-f="role" aria-label="Ruolo">${roleOpts(p.role)}</select>
+        <button class="btn sm" data-save>Salva</button>${p.id === S.user.id ? "" : '<button class="btn sm danger" data-del>Elimina</button>'}</div></div>`).join("")}</div>
+    ${rejected.length ? `<h2 style="margin-top:1.5rem">Rifiutati</h2>${rejected.map((p) => reqCard(p, true)).join("")}` : ""}`;
+
+  const row = (b) => b.closest(".req");
+  el.querySelectorAll("[data-ok]").forEach((b) => b.onclick = () => guard(async () => {
+    const r = row(b); await api.approveRegistration(r.dataset.id, r.querySelector('[data-f="role"]').value);
+    toast("Registrazione accettata"); renderAdminUsers();
+  }));
+  el.querySelectorAll("[data-no]").forEach((b) => b.onclick = () => guard(async () => {
+    if (!confirm("Rifiutare questa registrazione?")) return;
+    await api.rejectRegistration(row(b).dataset.id); toast("Registrazione rifiutata"); renderAdminUsers();
+  }));
+  el.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => guard(async () => {
+    if (!confirm("Eliminare definitivamente questo account? Il giocatore e le sue statistiche restano.")) return;
+    await api.deleteUser(row(b).dataset.id); toast("Utente eliminato"); renderAdminUsers();
+  }));
   el.querySelectorAll("[data-save]").forEach((b) => b.onclick = () => guard(async () => {
-    const tr = b.closest("tr");
-    await api.updateProfile(tr.dataset.id, { player_id: tr.querySelector('[data-f="player_id"]').value || null, role: tr.querySelector('[data-f="role"]').value }); toast("Salvato"); renderAdminUsers();
+    const r = row(b);
+    await api.updateProfile(r.dataset.id, { player_id: r.querySelector('[data-f="player_id"]').value || null, role: r.querySelector('[data-f="role"]').value }); toast("Salvato"); renderAdminUsers();
   }));
 }
 
@@ -510,6 +628,26 @@ async function renderMomAdmin() {
   f.match_id.onchange = () => { const d = f.match_id.selectedOptions[0]?.dataset.d; if (d) f.awarded_on.value = d; };
   f.onsubmit = (e) => { e.preventDefault(); guard(async () => { await api.addMom({ seasonId: S.season.id, playerId: f.player_id.value, matchId: f.match_id.value || null, awardedOn: f.awarded_on.value, note: f.note.value }); toast("MoM assegnato"); renderMomAdmin(); }); };
   el.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => guard(async () => { await api.deleteMom(b.dataset.del); renderMomAdmin(); }));
+}
+
+// ---- admin: etichette degli assi del radar
+function renderAdminRadar() {
+  const el = $("#adm-radar"); if (!el) return;
+  const sample = { lancio: 4, ricezione: 3, taglio: 5, difesa: 2, velocita: 4, resistenza: 3 };
+  const cur = () => Object.fromEntries(Object.keys(SKILL_DEFAULTS).map((k) => [k, $(`#rl-${k}`).value.trim()]));
+  el.innerHTML = `<h2>Etichette del radar</h2><p class="small muted">I nomi dei sei assi del radar nella scheda di ogni giocatore. Lascia vuoto per usare il nome predefinito. I valori già assegnati restano legati alla posizione dell'asse.</p>
+    <div class="skills-body radar-admin"><div id="radar-prev">${radarSvg(sample)}</div>
+      <div>${Object.entries(SKILL_DEFAULTS).map(([k, d], i) => `<label for="rl-${k}">Asse ${i + 1} <span class="muted">(predefinito: ${esc(d)})</span></label><input type="text" id="rl-${k}" maxlength="30" placeholder="${esc(d)}" value="${esc((S.settings.skill_labels?.[k] || "").trim())}" />`).join("")}
+        <div class="row" style="margin-top:.8rem"><button class="btn primary" id="rl-save">Salva etichette</button><button class="btn" id="rl-reset" type="button">Ripristina predefinite</button></div></div></div>`;
+  const preview = () => { $("#radar-prev").innerHTML = radarSvg(sample, cur()); fitRadar("#radar-prev svg"); };
+  setTimeout(() => { fitRadar("#radar-prev svg"); document.fonts?.ready.then(() => fitRadar("#radar-prev svg")); });
+  el.querySelectorAll("input").forEach((i) => i.oninput = preview);
+  $("#rl-reset").onclick = () => { el.querySelectorAll("input").forEach((i) => i.value = ""); preview(); };
+  $("#rl-save").onclick = () => guard(async () => {
+    const labels = Object.fromEntries(Object.entries(cur()).filter(([, v]) => v));
+    await api.saveSetting("skill_labels", labels);
+    S.settings = await api.getSettings(); toast("Etichette salvate");
+  });
 }
 
 // ---- admin: testi e albo d'oro

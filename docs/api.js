@@ -1,5 +1,5 @@
 // Livello dati: Supabase quando configurato, altrimenti modalità demo (sola lettura).
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=202610171933";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=202610181102";
 
 export const DEMO = SUPABASE_URL.includes("YOUR-PROJECT") || !SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.startsWith("YOUR");
 
@@ -8,7 +8,7 @@ let demo = null;    // dati demo
 
 export async function init() {
   if (DEMO) {
-    demo = await (await fetch("./demo-data.json?v=202610171933")).json();
+    demo = await (await fetch("./demo-data.json?v=202610181102")).json();
     return;
   }
   const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
@@ -34,17 +34,24 @@ export const auth = {
   async signIn(email, password) {
     return unwrap(await sb.auth.signInWithPassword({ email, password }));
   },
-  async signUp(email, password) {
-    return unwrap(await sb.auth.signUp({ email, password }));
+  // nickname e nome finiscono nei metadati dell'utente: il database li copia nella richiesta di registrazione
+  async signUp(email, password, nickname, fullName) {
+    return unwrap(await sb.auth.signUp({ email, password, options: { data: { nickname, full_name: fullName }, emailRedirectTo: location.origin + location.pathname } }));
   },
+  // solo accesso: un nuovo account si crea dalla registrazione (con nickname e nome)
   async magicLink(email) {
-    return unwrap(await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname } }));
+    return unwrap(await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo: location.origin + location.pathname } }));
   },
   async signOut() { await sb.auth.signOut(); },
   async me() {
     if (DEMO) return null;
     const rows = unwrap(await sb.rpc("me"));
-    return rows?.[0] || null;
+    const me = rows?.[0];
+    if (!me) return null;
+    const prof = unwrap(await sb.from("profiles").select("status,requested_nickname,requested_full_name").eq("id", me.user_id))[0] || {};
+    const ok = (prof.status || "approved") === "approved";
+    // finché la registrazione non è approvata l'utente non ha ruolo né giocatore (lo impone anche il database)
+    return { ...me, ...prof, status: prof.status || "approved", role: ok ? me.role : null, player_id: ok ? me.player_id : null };
   },
 };
 
@@ -130,6 +137,12 @@ export async function saveSkills(playerId, v) {
   unwrap(await sb.from("player_skills").upsert({ player_id: playerId, ...v }, { onConflict: "player_id" }));
 }
 
+// media voti ricevuti partita per partita (anonima) + flag MVP
+export async function getPlayerMatchRatings(playerId) {
+  if (DEMO) return demo.v_match_ratings.filter((r) => r.player_id === playerId);
+  return unwrap(await sb.from("v_match_ratings").select("*").eq("player_id", playerId));
+}
+
 export async function getHallOfFame() {
   if (DEMO) return [...demo.hall_of_fame].sort((a, b) => b.sort_order - a.sort_order);
   return unwrap(await sb.from("hall_of_fame").select("*").order("sort_order", { ascending: false }));
@@ -171,10 +184,10 @@ export async function setCurrentSeason(id) {
   unwrap(await sb.from("seasons").update({ is_current: false }).eq("is_current", true));
   unwrap(await sb.from("seasons").update({ is_current: true }).eq("id", id));
 }
-export async function getInvites() { return unwrap(await sb.from("player_invites").select("*").order("email")); }
-export async function upsertInvite(i) { unwrap(await sb.from("player_invites").upsert(i)); }
-export async function deleteInvite(email) { unwrap(await sb.from("player_invites").delete().eq("email", email)); }
-export async function getProfiles() { return unwrap(await sb.from("profiles").select("*").order("email")); }
+export async function getProfiles() { return unwrap(await sb.from("profiles").select("*").order("created_at", { ascending: false })); }
+export async function approveRegistration(id, role) { return unwrap(await sb.rpc("approve_registration", { p_user: id, p_role: role })); }
+export async function rejectRegistration(id) { unwrap(await sb.rpc("reject_registration", { p_user: id })); }
+export async function deleteUser(id) { unwrap(await sb.rpc("delete_user", { p_user: id })); }
 export async function updateProfile(id, patch) { unwrap(await sb.from("profiles").update(patch).eq("id", id)); }
 export async function saveSetting(key, value) { unwrap(await sb.from("settings").upsert({ key, value })); }
 export async function upsertHallOfFame(row) { unwrap(await sb.from("hall_of_fame").upsert(row)); }
