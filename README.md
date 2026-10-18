@@ -70,4 +70,5 @@ La chiave *anon* è fatta per stare nel sito pubblico: non dà nessun potere olt
 * Le viste `v_standings`, `v_match_ratings`, `v_mom_points` ecc. sostituiscono le formule dell'Excel; sono *security definer* di proposito per esporre solo aggregati anonimi.
 * Modalità demo: finché `config.js` contiene i valori di esempio, il sito mostra i dati 2025/26 da `demo-data.json` in sola lettura.
 * Per aggiornare lo schema in futuro basta rieseguire `0001_schema.sql` (è idempotente).
+* **Prima di pubblicare**: con il server locale avviato (`cd docs && python3 -m http.server 8787`) esegui `python3 scripts/test_sito.py`. Prova tutte le pagine pubbliche sul database vero (solo letture, telefono/desktop, tema chiaro/scuro) e tutti i ruoli con un database finto e rete lenta simulata; segnala errori, testi come "undefined", pagine che sbordano.
 * Test locali (opzionali): `scripts/test_local.sql` + `scripts/test_rls.sql` verificano le policy su un Postgres locale; `scripts/test_ui.py` esercita l'interfaccia con Playwright.

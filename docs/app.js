@@ -1,5 +1,5 @@
-import * as api from "./api.js?v=202610181602";
-import { DEMO } from "./api.js?v=202610181602";
+import * as api from "./api.js?v=202610181728";
+import { DEMO } from "./api.js?v=202610181728";
 
 // ============================================================== stato & utilità
 const S = {
@@ -60,7 +60,7 @@ async function boot() {
     if (S.user) S.me = await api.auth.me();
     api.auth.onChange(async (u) => { S.user = u; S.me = u ? await api.auth.me() : null; renderUserbox(); route(); });
   }
-  renderNav(); renderUserbox();
+  renderNav(); renderUserbox(); bindCommentDelete();
   window.addEventListener("hashchange", route);
   route();
 }
@@ -99,16 +99,26 @@ const routes = [
   [/^#\/tabellino(?:\/([\w-]+))?$/, viewScoreForm],
   [/^#\/vota\/([\w-]+)$/, viewVote],
 ];
+// Ogni navigazione ha un numero: se nel frattempo ne parte un'altra, il risultato della vecchia
+// (arrivato in ritardo dalla rete) viene scartato e i suoi "dopo il render" non partono.
+let routeSeq = 0;
+const isCurrentRoute = (t) => t === routeSeq;
+// da chiamare all'inizio (sincrono) di ogni vista: esegue fn dopo il render solo se la vista è ancora quella mostrata
+const laterFor = () => { const t = routeSeq; return (fn) => setTimeout(() => { if (isCurrentRoute(t)) fn(); }); };
 async function route() {
   const hash = location.hash || "#/";
+  const token = ++routeSeq;
   markNav(hash);
   const app = $("#app");
   for (const [re, fn] of routes) {
     const m = hash.match(re);
     if (m) {
       app.innerHTML = `<div class="empty">Caricamento…</div>`;
-      try { app.innerHTML = await fn(...m.slice(1)); app.classList.add("fade"); bindCommon(app); }
-      catch (e) { console.error(e); app.innerHTML = `<div class="card"><h2>Ops</h2><p class="muted">${esc(e.message)}</p></div>`; }
+      let html;
+      try { html = await fn(...m.slice(1)); }
+      catch (e) { console.error(e); html = `<div class="card"><h2>Ops</h2><p class="muted">${esc(e.message)}</p></div>`; }
+      if (!isCurrentRoute(token)) return;      // nel frattempo l'utente è andato altrove
+      app.innerHTML = html; app.classList.add("fade"); bindCommon(app);
       window.scrollTo({ top: 0 });
       return;
     }
@@ -129,7 +139,7 @@ const pastSeasons = () => { const cur = currentSeason(); return S.seasons.filter
 async function viewStandings() {
   const s = currentSeason();
   if (!s) return `<div class="empty">Nessuna stagione configurata.</div>`;
-  return `${demoBanner()}${standingsHead("current")}${await standingsBody(s, true)}`;
+  return `${demoBanner()}${standingsHead("current")}${await standingsBody(s, true, laterFor())}`;
 }
 
 async function viewHistory(seasonId) {
@@ -138,7 +148,7 @@ async function viewHistory(seasonId) {
   if (!s) return `${standingsHead("history")}<div class="empty">Non ci sono ancora stagioni concluse.</div>`;
   return `${demoBanner()}${standingsHead("history")}
     <div class="season-pills">${past.map((x) => `<a class="pill ${x.id === s.id ? "active" : ""}" href="#/storico/${x.id}">${esc(x.name)}</a>`).join("")}</div>
-    ${await standingsBody(s, false)}`;
+    ${await standingsBody(s, false, laterFor())}`;
 }
 
 function standingsHead(active) {
@@ -151,7 +161,7 @@ function standingsHead(active) {
 }
 
 // Corpo classifica di una stagione. Per la stagione in corso mostra tutta la rosa attiva, anche a 0 punti.
-async function standingsBody(s, isCurrent) {
+async function standingsBody(s, isCurrent, later = (fn) => setTimeout(fn)) {
   const [rows, ratings] = await Promise.all([api.getStandings(s.id), api.getSeasonRatings(s.id)]);
   const activeIds = new Set(S.players.filter((p) => p.active).map((p) => p.id));
   const shown = rows.filter((r) => r.played > 0 || r.mom > 0 || (isCurrent && activeIds.has(r.player_id)));
@@ -163,13 +173,13 @@ async function standingsBody(s, isCurrent) {
   const me = myPlayer();
   const anyPlayed = shown.some((r) => r.played > 0);
 
-  const podium = (list, key, suffix) => {
+  const podium = (list, key, suffix, sub = (r) => `${r.played} ${r.played === 1 ? "partita" : "partite"}`) => {
     const top = list.slice(0, 3);
     if (top.length < 3 || !top.every((r) => Number(r[key]) > 0)) return "";
     const medal = ["🥇", "🥈", "🥉"];
     return `<div class="podium">${top.map((r, i) => `<div class="step p${i + 1}" data-go="#/giocatore/${r.player_id}">
       <div class="medal">${medal[i]}</div>${avatar(r.nickname)}<div class="name">${esc(r.nickname)}</div>
-      <div class="pts">${r[key]}${suffix}</div><div class="sub">${r.played} partite</div></div>`).join("")}</div>`;
+      <div class="pts">${r[key]}${suffix}</div><div class="sub">${sub(r)}</div></div>`).join("")}</div>`;
   };
 
   const tablePts = byPts.length ? `<div class="table-wrap"><table class="standings"><thead><tr>
@@ -188,7 +198,7 @@ async function standingsBody(s, isCurrent) {
     ${byMvp.map((r, i) => `<tr class="${r.player_id === me ? "me" : ""}" data-go="#/giocatore/${r.player_id}"><td class="rank">${i + 1}</td><td class="name">${esc(r.nickname)}</td><td class="pts">${Number(r.avg_score).toFixed(2)}</td><td>${r.votes}</td><td class="opt">${r.rated_matches}</td><td>${r.mvp_count ? "⭐ " + r.mvp_count : "–"}</td></tr>`).join("")}
     </tbody></table></div>` : `<div class="empty">Ancora nessuna votazione in questa stagione. Dopo ogni partita i giocatori in campo votano i compagni: chi ha la media più alta è l'MVP.</div>`;
 
-  setTimeout(() => {
+  later(() => {
     const root = $("#app");
     root.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => {
       root.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("active", x === b));
@@ -199,18 +209,25 @@ async function standingsBody(s, isCurrent) {
   <section data-tab="pts">${podium(byPts.filter((r) => r.eligible_ranking), "points", " pt")}${isCurrent && !anyPlayed ? '<p class="small muted">Nessuna partita ancora giocata: tutti partono da 0.</p>' : ""}${tablePts}
     <p class="small muted">G = giocate · V/N/P = vinte/pareggiate/perse · ${s.points_win} punti a vittoria, ${s.points_draw} a pareggio, ${s.points_mom} per MoM/MVP${s.min_players_valid > 0 ? ` · valgono le partite con almeno ${s.min_players_valid} giocatori` : ""}.</p></section>
   <section data-tab="eff" class="hidden">${podium(byEff, "efficiency", "%")}${tableEff}</section>
-  <section data-tab="mvp" class="hidden">${podium(byMvp, "avg_score", "")}${tableMvp}</section>`;
+  <section data-tab="mvp" class="hidden">${podium(byMvp.map((r) => ({ ...r, avg_fmt: Number(r.avg_score).toFixed(2) })), "avg_fmt", "", (r) => `${r.votes} ${r.votes === 1 ? "voto" : "voti"} · ${r.rated_matches} ${r.rated_matches === 1 ? "partita" : "partite"}`)}${tableMvp}</section>`;
 }
 
 // ============================================================== PARTITE
 // commento firmato (il voto resta anonimo); l'organizzatore lo può cancellare
 const commentHtml = (c, who) => `<div class="comment"><div class="who"><span>${who}</span>${isAdmin() && c.rating_id ? `<button type="button" class="cmt-del" data-rmc="${c.rating_id}" aria-label="Cancella commento" title="Cancella commento">🗑</button>` : ""}</div>${esc(c.comment)}</div>`;
 const author = (c) => esc(c.author_nickname || nick(c.author_id) || "?");
+// un solo gestore delegato su #app: funziona per qualunque pagina e indipendentemente da quando arrivano i dati
 function bindCommentDelete() {
-  document.querySelectorAll("[data-rmc]").forEach((b) => b.onclick = () => guard(async () => {
-    if (!confirm("Cancellare questo commento? Il voto resta.")) return;
-    await api.removeComment(b.dataset.rmc); toast("Commento cancellato"); route();
-  }));
+  $("#app").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-rmc]"); if (!b) return;
+    e.preventDefault();
+    guard(async () => {
+      if (!confirm("Cancellare questo commento? Il voto resta.")) return;
+      b.disabled = true;
+      try { await api.removeComment(b.dataset.rmc); } finally { b.disabled = false; }
+      toast("Commento cancellato"); route();
+    });
+  });
 }
 function resultChip(m) {
   if (!m.result) return `<span class="chip warn">Risultato da inserire</span>`;
@@ -235,7 +252,6 @@ async function viewMatches() {
 }
 
 async function viewMatch(id) {
-  setTimeout(bindCommentDelete);
   const all = await api.getMatches(S.season.id);
   let m = all.find((x) => x.id === id);
   if (!m) { // forse di un'altra stagione
@@ -310,12 +326,12 @@ function fitRadar(sel = "#radar svg") {
   try { const b = svg.getBBox(), pad = 6; svg.setAttribute("viewBox", `${b.x - pad} ${b.y - pad} ${b.width + 2 * pad} ${b.height + 2 * pad}`); } catch {}
 }
 
-function skillsCard(playerId, skills) {
+function skillsCard(playerId, skills, later = (fn) => setTimeout(fn)) {
   const SKILLS = skillDefs();
   const v = Object.fromEntries(SKILLS.map(([k]) => [k, skills?.[k] ?? 0]));
   const edit = canEditSkills() && !DEMO;
-  setTimeout(() => { fitRadar(); document.fonts?.ready.then(() => fitRadar()); });
-  if (edit) setTimeout(() => {
+  later(() => { fitRadar(); document.fonts?.ready.then(() => fitRadar()); });
+  if (edit) later(() => {
     const box = $("#skills"); if (!box) return;
     box.addEventListener("click", (e) => {
       const b = e.target.closest("[data-sk]"); if (!b) return;
@@ -339,11 +355,12 @@ function skillsCard(playerId, skills) {
 
 // ============================================================== GIOCATORI
 async function viewPlayers() {
+  const later = laterFor();
   const rows = S.season ? await api.getStandings(S.season.id) : [];
   const st = Object.fromEntries(rows.map((r) => [r.player_id, r]));
   // tutti i giocatori: quelli non attivi compaiono solo cercandoli
   const list = [...S.players].sort((a, b) => (st[b.id]?.points || 0) - (st[a.id]?.points || 0) || a.nickname.localeCompare(b.nickname, "it"));
-  setTimeout(() => {
+  later(() => {
     const q = $("#pl-q"), cards = [...document.querySelectorAll(".player-card")];
     const apply = () => {
       const t = q.value.trim().toLowerCase();
@@ -361,12 +378,13 @@ async function viewPlayers() {
 }
 
 async function viewPlayer(id) {
-  setTimeout(bindCommentDelete);
+  const later = laterFor();
   const p = S.pmap.get(id);
   if (!p) return `<div class="empty">Giocatore non trovato.</div>`;
   const [seasons, matches, comments, skills, myRatings] = await Promise.all([api.getPlayerSeasons(id), api.getPlayerMatches(id), api.getComments({ playerId: id }), api.getSkills(id).catch(() => null), api.getPlayerMatchRatings(id).catch(() => [])]);
   const ratingsBySeason = {};
-  for (const s of S.seasons) ratingsBySeason[s.id] = (await api.getSeasonRatings(s.id)).find((r) => r.player_id === id);
+  const allRatings = await Promise.all(S.seasons.map((s) => api.getSeasonRatings(s.id)));   // in parallelo, non una stagione alla volta
+  S.seasons.forEach((s, i) => { ratingsBySeason[s.id] = allRatings[i].find((r) => r.player_id === id); });
   const cur = seasons.find((s) => s.season_id === S.season?.id) || seasons[0];
   // andamento: per ogni partita della stagione risultato (quadratino) e media dei voti ricevuti (barra)
   const rByMatch = Object.fromEntries(myRatings.map((r) => [r.match_id, r]));
@@ -382,9 +400,9 @@ async function viewPlayer(id) {
   }).join("");
   const voted = seasonMatches.map((m) => rByMatch[m.id]).filter(Boolean);
   const rr = cur ? ratingsBySeason[cur.season_id] : null;
-  setTimeout(() => { const t = $("#trend"); if (t) t.scrollLeft = t.scrollWidth; });
+  later(() => { const t = $("#trend"); if (t) t.scrollLeft = t.scrollWidth; });
   return `<div class="page-head"><div class="grow row">${avatar(p.nickname, "lg")}<div><h3>Giocatore</h3><h1>${esc(p.nickname)}</h1>${p.full_name ? `<div class="muted">${esc(p.full_name)}</div>` : ""}</div></div></div>
-    ${skillsCard(id, skills)}
+    ${skillsCard(id, skills, later)}
     ${cur ? `<div class="card"><h2>Stagione ${esc(cur.season_name)}</h2>
       <div class="stats"><div class="stat"><b>${cur.rank_points}°</b><span>posizione</span></div><div class="stat"><b>${cur.points}</b><span>punti</span></div><div class="stat"><b>${cur.played}</b><span>giocate</span></div>
         <div class="stat"><b>${cur.wins}</b><span>vinte</span></div><div class="stat"><b>${cur.losses}</b><span>perse</span></div><div class="stat"><b>${cur.mom}</b><span>MoM/MVP</span></div>
@@ -451,10 +469,11 @@ async function viewRules() {
 
 // ============================================================== LOGIN
 async function viewLogin(mode) {
+  const later = laterFor();
   if (DEMO) return `<div class="card login-box"><span class="logo" role="img" aria-label="Disc &amp; Disc"></span><h2>Modalità demo</h2><p class="muted">Il login si attiva collegando un progetto Supabase in <code>config.js</code>.</p></div>`;
   if (S.user) { location.hash = "#/area"; return ""; }
   const signup = mode === "registrati";
-  setTimeout(() => {
+  later(() => {
     const f = $("#login-form");
     f.onsubmit = (e) => { e.preventDefault(); guard(async () => {
       const email = f.email.value.trim();
@@ -489,15 +508,16 @@ async function viewLogin(mode) {
 
 // ============================================================== AREA RISERVATA
 async function viewArea() {
+  const later = laterFor();
   if (DEMO) return viewLogin();
   if (!S.user) { location.hash = "#/login"; return ""; }
   // chi non è ancora approvato rilegge lo stato ogni volta: l'approvazione deve vedersi senza rifare l'accesso
   if (S.me?.status !== "approved") { S.me = await api.auth.me(); renderUserbox(); }
   const me = S.me;
   if (me && me.status !== "approved") {
-    setTimeout(() => {
+    later(() => {
       $("#btn-logout").onclick = () => guard(async () => { await api.auth.signOut(); location.hash = "#/"; });
-      $("#btn-recheck").onclick = () => guard(async () => { S.me = await api.auth.me(); if (S.me?.status === "approved") toast("Registrazione accettata!"); route(); });
+      const rc = $("#btn-recheck"); if (rc) rc.onclick = () => guard(async () => { S.me = await api.auth.me(); if (S.me?.status === "approved") toast("Registrazione accettata!"); route(); });
     });
     return `<div class="card login-box"><span class="logo" role="img" aria-label="Disc &amp; Disc"></span>
       ${me.status === "pending" ? `<h2>Registrazione in attesa</h2><p>Hai chiesto di entrare come <b>${esc(me.requested_nickname || "?")}</b>${me.requested_full_name ? ` (${esc(me.requested_full_name)})` : ""}. L'organizzatore deve accettare la richiesta: poi potrai votare i compagni.</p>`
@@ -516,13 +536,14 @@ async function viewArea() {
       votable = open.filter((m) => mps.some((p) => p.match_id === m.id && p.player_id === myPlayer()));
     }
   }
-  setTimeout(() => {
+  later(() => {
     $("#btn-logout").onclick = () => guard(async () => { await api.auth.signOut(); location.hash = "#/"; });
     if (!isAdmin() && canScore()) renderMomAdmin();
     const tabs = $("#area-tabs");
     if (tabs) tabs.querySelectorAll("button").forEach((b) => b.onclick = () => {
       tabs.querySelectorAll("button").forEach((x) => x.classList.toggle("active", x === b));
       document.querySelectorAll("[data-atab]").forEach((sec) => sec.classList.toggle("hidden", sec.dataset.atab !== b.dataset.t));
+      const box = document.querySelector(`[data-atab="${b.dataset.t}"]`); if (box) box.innerHTML = `<div class="empty">Caricamento…</div>`;
       if (b.dataset.t === "players") renderAdminPlayers(); if (b.dataset.t === "users") renderAdminUsers(); if (b.dataset.t === "seasons") renderAdminSeasons(); if (b.dataset.t === "texts") renderAdminTexts(); if (b.dataset.t === "radar") renderAdminRadar();
       if (b.dataset.t === "mom") renderMomAdmin();
     });
@@ -695,6 +716,7 @@ async function renderAdminTexts() {
 
 // ============================================================== TABELLINO (score keeper)
 async function viewScoreForm(id) {
+  const later = laterFor();
   if (!canScore()) { location.hash = "#/login"; return ""; }
   let m = null;
   const assign = {};                       // player_id -> "bianca" | "nera"
@@ -739,7 +761,7 @@ async function viewScoreForm(id) {
     result = +a > +b ? "bianca" : +a < +b ? "nera" : "pareggio";
   };
 
-  setTimeout(() => {
+  later(() => {
     const f = $("#f-match");
     f.addEventListener("click", (e) => {
       const add = e.target.closest("[data-add]"), rm = e.target.closest("[data-rm]"), seg = e.target.closest("[data-target]"), res = e.target.closest("[data-r]"), step = e.target.closest("[data-step]");
@@ -810,6 +832,7 @@ async function viewScoreForm(id) {
 
 // ============================================================== VOTA
 async function viewVote(matchId) {
+  const later = laterFor();
   if (!myPlayer()) { location.hash = "#/area"; return ""; }
   let m = null;
   for (const s of S.seasons) { const ms = await api.getMatches(s.id); m = ms.find((x) => x.id === matchId); if (m) break; }
@@ -836,7 +859,7 @@ async function viewVote(matchId) {
     $("#vote-sum").innerHTML = `Votati <b>${tot}</b> di ${others.length}`;
   };
 
-  setTimeout(() => {
+  later(() => {
     const f = $("#f-vote");
     f.addEventListener("click", (e) => {
       const b = e.target.closest("[data-score]"), c = e.target.closest("[data-cmt]");
