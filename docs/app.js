@@ -1,5 +1,5 @@
-import * as api from "./api.js?v=202610181728";
-import { DEMO } from "./api.js?v=202610181728";
+import * as api from "./api.js?v=202610190907";
+import { DEMO } from "./api.js?v=202610190907";
 
 // ============================================================== stato & utilità
 const S = {
@@ -252,6 +252,7 @@ async function viewMatches() {
 }
 
 async function viewMatch(id) {
+  const later = laterFor();
   const all = await api.getMatches(S.season.id);
   let m = all.find((x) => x.id === id);
   if (!m) { // forse di un'altra stagione
@@ -259,6 +260,9 @@ async function viewMatch(id) {
     if (!m) return `<div class="empty">Partita non trovata.</div>`;
   }
   const [mps, ratings, comments, moms] = await Promise.all([api.getMatchPlayers([id]), api.getMatchRatings(id), api.getComments({ matchId: id }), api.getMomPoints(m.season_id)]);
+  const skillsBy = Object.fromEntries((await api.getSkillsFor(mps.map((p) => p.player_id)).catch(() => [])).map((x) => [x.player_id, x]));
+  later(() => ["bianca", "nera"].forEach((t) => { fitRadar(`#radar-${t} svg`); document.fonts?.ready.then(() => fitRadar(`#radar-${t} svg`)); }));
+  const teamIds = (t) => mps.filter((p) => p.team === t).map((p) => p.player_id);
   const rt = Object.fromEntries(ratings.map((r) => [r.player_id, r]));
   const momHere = moms.filter((x) => x.match_id === id);
   const sea = S.seasons.find((s) => s.id === m.season_id);
@@ -275,6 +279,7 @@ async function viewMatch(id) {
   return `<div class="page-head"><div class="grow"><h3>Partita</h3><h1>${fmtDate(m.played_on)}</h1>${hasScore(m) ? `<div class="scoreline"><span>Bianca</span><b>${m.score_bianca} – ${m.score_nera}</b><span>Nera</span></div>` : ""}<div class="row">${resultChip(m)}${m.is_valid ? '<span class="chip ok">Valida</span>' : '<span class="chip bad">Non valida (' + m.n_players + ' giocatori)</span>'}${m.voting_open ? `<span class="chip info">Voto aperto fino a ${fmtShort(lastVoteDay(m))}</span>` : ""}</div></div>
       <div class="row">${iPlayed && m.voting_open && !DEMO ? `<a class="btn primary" href="#/vota/${m.id}">⭐ Vota i compagni</a>` : ""}${canScore() ? `<a class="btn" href="#/tabellino/${m.id}">Modifica</a>` : ""}</div></div>
     <div class="roster">${col("bianca")}${col("nera")}</div>
+    <div class="grid cols-2 team-sk-grid">${teamSkillsCard("bianca", teamIds("bianca"), skillsBy)}${teamSkillsCard("nera", teamIds("nera"), skillsBy)}</div>
     ${m.notes ? `<p class="muted">${esc(m.notes)}</p>` : ""}
     <div class="grid cols-2" style="margin-top:1rem">
       <div class="card"><h2>Valutazioni</h2>${ratings.length ? `<p class="small muted">${((n) => `${n} ${n === 1 ? "voto espresso" : "voti espressi"}`)(ratings.reduce((a, r) => a + r.votes, 0))}. ${m.voting_open ? `Votazioni aperte fino a ${fmtDate(lastVoteDay(m))}: alla chiusura diventa MVP chi ha la media più alta (a pari media, più MVP).` : (mvps.length ? `MVP: <b>${mvps.map((r) => esc(nick(r.player_id))).join(", ")}</b>${m.is_valid ? "" : " (partita non valida: niente punto)"}.` : `Nessun MVP: serviva almeno ${sea.min_votes_mvp} voti.`)}</p>
@@ -297,9 +302,15 @@ const wrapLabel = (t) => {
 };
 const skillDefs = (labels) => Object.keys(SKILL_DEFAULTS).map((k) => [k, wrapLabel(skillLabel(k, labels))]);
 const canEditSkills = () => ["admin", "coach"].includes(S.me?.role);
+// valore generale: somma dei sei assi (0–30)
+const SKILL_MAX = 5 * Object.keys(SKILL_DEFAULTS).length;
+const skillTotal = (v) => Object.keys(SKILL_DEFAULTS).reduce((a, k) => a + (Number(v?.[k]) || 0), 0);
+const totalBox = (val, id = "", label = "Valore generale") => `<div class="sk-total" title="Somma dei sei valori"><span class="lbl">${label}</span><span><b ${id ? `id="${id}"` : ""}>${val}</b><span class="of"> / ${SKILL_MAX}</span></span></div>`;
 
-function radarSvg(v, axisLabels) {
+// dec = 1 per mostrare i valori con un decimale (medie di squadra)
+function radarSvg(v, axisLabels, dec = 0) {
   const SKILLS = skillDefs(axisLabels);
+  const show = (x) => (Number(x) || 0).toFixed(dec);
   const cx = 200, cy = 170, R = 120, n = SKILLS.length;
   const pt = (i, r) => { const a = (-90 + (360 / n) * i) * Math.PI / 180; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; };
   const poly = (r) => SKILLS.map((_, i) => pt(i, typeof r === "function" ? r(i) : r).map((x) => x.toFixed(1)).join(",")).join(" ");
@@ -313,10 +324,10 @@ function radarSvg(v, axisLabels) {
     let x = vx, anchor = "middle";
     if (Math.abs(vx - cx) > 10) { anchor = vx > cx ? "start" : "end"; x = vx + (vx > cx ? -6 : 6); }
     const y = vy < cy - 1 ? vy - 14 - (lines.length - 1) * 18 : vy + 26;
-    const tl = lines.map((l, j) => `<tspan x="${x.toFixed(1)}" ${j ? 'dy="18"' : ""}>${esc(l)}${j === lines.length - 1 ? ` <tspan class="r-val">${Number(v[k]) || 0}</tspan>` : ""}</tspan>`).join("");
+    const tl = lines.map((l, j) => `<tspan x="${x.toFixed(1)}" ${j ? 'dy="18"' : ""}>${esc(l)}${j === lines.length - 1 ? ` <tspan class="r-val">${show(v[k])}</tspan>` : ""}</tspan>`).join("");
     return `<text class="r-label" text-anchor="${anchor}" x="${x.toFixed(1)}" y="${y.toFixed(1)}">${tl}</text>`;
   }).join("");
-  const desc = SKILLS.map(([k, l]) => `${l.join(" ")} ${Number(v[k]) || 0} su 5`).join(", ");
+  const desc = SKILLS.map(([k, l]) => `${l.join(" ")} ${show(v[k])} su 5`).join(", ");
   return `<svg class="radar" viewBox="0 0 400 340" role="img" aria-label="Caratteristiche: ${esc(desc)}">${rings}${axes}
     <polygon class="r-area" points="${poly(val)}"/>${dots}${labels}</svg>`;
 }
@@ -338,6 +349,7 @@ function skillsCard(playerId, skills, later = (fn) => setTimeout(fn)) {
       v[b.dataset.sk] = Number(b.dataset.v);
       box.querySelectorAll(`[data-sk="${b.dataset.sk}"]`).forEach((x) => x.classList.toggle("active", x === b));
       $("#radar").innerHTML = radarSvg(v); fitRadar(); $("#sk-save").disabled = false;
+      $("#sk-total").textContent = skillTotal(v);
     });
     $("#sk-save").onclick = () => guard(async () => {
       $("#sk-save").disabled = true;
@@ -345,12 +357,25 @@ function skillsCard(playerId, skills, later = (fn) => setTimeout(fn)) {
       catch (e) { $("#sk-save").disabled = false; throw e; }
     });
   });
-  return `<section class="card skills" id="skills"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Caratteristiche</h2>${skills ? "" : '<span class="chip">da valutare</span>'}</div>
+  return `<section class="card skills" id="skills"><div class="sk-head"><div><h2 style="margin:0">Caratteristiche</h2>${skills ? "" : '<span class="chip" style="margin-top:.3rem">da valutare</span>'}</div>${totalBox(skillTotal(v), "sk-total")}</div>
     <div class="skills-body"><div id="radar">${radarSvg(v)}</div>
     ${edit ? `<div class="sk-edit"><p class="small muted" style="margin:.2rem 0 .4rem">Valori da 0 a 5, modificabili da organizzatori e allenatori.</p>
       ${SKILLS.map(([k, l]) => `<div class="sk-row"><span class="sk-name">${esc(l.join(" "))}</span><div class="sk-seg" role="radiogroup" aria-label="${esc(l.join(" "))}">${[0, 1, 2, 3, 4, 5].map((n) => `<button type="button" data-sk="${k}" data-v="${n}" class="${v[k] === n ? "active" : ""}" aria-label="${n}">${n}</button>`).join("")}</div></div>`).join("")}
       <button class="btn primary" id="sk-save" disabled style="margin-top:.8rem;width:100%">Salva caratteristiche</button></div>`
     : (skills ? "" : '<p class="small muted" style="text-align:center;margin:0">Non ancora valutato dagli allenatori.</p>')}</div></section>`;
+}
+
+// Caratteristiche di squadra: media per asse e media del valore generale, sui soli giocatori già valutati
+function teamSkillsCard(team, playerIds, skillsBy) {
+  const rated = playerIds.map((id) => skillsBy[id]).filter(Boolean);
+  const keys = Object.keys(SKILL_DEFAULTS);
+  const r1 = (x) => Math.round(x * 10) / 10;
+  const avg = Object.fromEntries(keys.map((k) => [k, rated.length ? r1(rated.reduce((a, s) => a + (Number(s[k]) || 0), 0) / rated.length) : 0]));
+  const avgTotal = rated.length ? r1(rated.reduce((a, s) => a + skillTotal(s), 0) / rated.length) : 0;
+  return `<section class="vote-team ${team} team-sk"><h2 class="vt-head"><span>Caratteristiche <small>Squadra ${team === "bianca" ? "Bianca" : "Nera"}</small></span>
+      <span class="chip">valutati ${rated.length}/${playerIds.length}</span></h2>
+    <div class="team-sk-body">${rated.length ? `${totalBox(avgTotal.toFixed(1), "", "Valore medio")}<div class="team-radar" id="radar-${team}">${radarSvg(avg, undefined, 1)}</div>`
+      : '<p class="muted small" style="margin:0">Nessun giocatore di questa squadra è ancora stato valutato dagli allenatori.</p>'}</div></section>`;
 }
 
 // ============================================================== GIOCATORI

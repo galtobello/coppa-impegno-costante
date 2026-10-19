@@ -1,5 +1,5 @@
 // Livello dati: Supabase quando configurato, altrimenti modalità demo (sola lettura).
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=202610181728";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=202610190907";
 
 export const DEMO = SUPABASE_URL.includes("YOUR-PROJECT") || !SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.startsWith("YOUR");
 
@@ -8,7 +8,7 @@ let demo = null;    // dati demo
 
 export async function init() {
   if (DEMO) {
-    demo = await (await fetch("./demo-data.json?v=202610181728")).json();
+    demo = await (await fetch("./demo-data.json?v=202610190907")).json();
     return;
   }
   const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
@@ -135,6 +135,11 @@ export async function getSkills(playerId) {
   if (DEMO) return null;
   const rows = unwrap(await sb.from("player_skills").select("*").eq("player_id", playerId));
   return rows[0] || null;
+}
+// caratteristiche di più giocatori (card di squadra nel dettaglio partita)
+export async function getSkillsFor(playerIds) {
+  if (DEMO || !playerIds.length) return [];
+  return unwrap(await sb.from("player_skills").select("*").in("player_id", playerIds));
 }
 export async function saveSkills(playerId, v) {
   unwrap(await sb.from("player_skills").upsert({ player_id: playerId, ...v }, { onConflict: "player_id" }));

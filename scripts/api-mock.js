@@ -11,7 +11,10 @@ export async function init() { D = await (await fetch("./demo-data.json")).json(
     { id: "u1", email: "test@example.com", role: "admin", status: "approved", player_id: null, created_at: "2026-10-01T10:00:00Z" },
     { id: "u2", email: "thor@example.com", role: "player", status: "pending", requested_nickname: "thor", requested_full_name: "Tommaso Rossi", created_at: "2026-10-17T10:00:00Z" },
     { id: "u3", email: "nuovo@example.com", role: "player", status: "pending", requested_nickname: "Fulmine", requested_full_name: "Luca Bianchi", created_at: "2026-10-18T09:00:00Z" },
-    { id: "u4", email: "spam@example.com", role: "player", status: "rejected", requested_nickname: "Boh", requested_full_name: "X", created_at: "2026-10-16T09:00:00Z" }]; const cur = new URLSearchParams(location.search).get("cur") || "2025/2026"; D.seasons.forEach((s) => s.is_current = s.name === cur); }
+    { id: "u4", email: "spam@example.com", role: "player", status: "rejected", requested_nickname: "Boh", requested_full_name: "X", created_at: "2026-10-16T09:00:00Z" }]; const cur = new URLSearchParams(location.search).get("cur") || "2025/2026"; D.seasons.forEach((s) => s.is_current = s.name === cur);
+  // ?seedskills: caratteristiche finte per circa 3 giocatori su 4 (valori deterministici)
+  if (new URLSearchParams(location.search).has("seedskills")) { D.skills = {}; D.players.forEach((p, i) => { if (i % 4 !== 3) D.skills[p.id] = { player_id: p.id, lancio: (i * 3) % 6, ricezione: (i * 5 + 2) % 6, taglio: (i + 3) % 6, difesa: (i * 2 + 1) % 6, velocita: (i * 7 + 4) % 6, resistenza: (i * 4 + 5) % 6 }; }); }
+}
 const seasonOf = (id) => D.seasons.find((s) => s.id === id);
 const recompute = () => {
   for (const m of D.v_matches) {
@@ -90,3 +93,4 @@ export async function getPlayerMatchRatings(pid) { await lag();
   // voti finti deterministici: media 4-9 su ogni partita giocata, MVP sulle medie >= 8.5
   return D.match_players.filter((mp) => mp.player_id === pid).map((mp, i) => { const v = 4 + ((i * 7) % 11) / 2; return { match_id: mp.match_id, player_id: pid, avg_score: v, votes: 3 + (i % 4), is_mvp: v >= 8.5 }; });
 }
+export async function getSkillsFor(ids) { await lag(); return Object.values(D.skills ||= {}).filter((x) => ids.includes(x.player_id)); }

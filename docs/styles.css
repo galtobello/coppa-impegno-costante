@@ -389,6 +389,17 @@ input.search { margin-bottom: 1rem; padding-left: 2.4rem; background: var(--card
 .guide-body ul, .guide-body ol { margin: .3rem 0; padding-left: 1.2rem; }
 .guide-body li { margin: .35rem 0; }
 
+/* ---- valore generale e caratteristiche di squadra ---- */
+.sk-head { display: flex; justify-content: space-between; align-items: flex-start; gap: .8rem; }
+.sk-total { display: grid; justify-items: end; padding: .45rem .75rem; border-radius: 12px; background: color-mix(in srgb, var(--accent) 14%, var(--card-2)); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); line-height: 1.1; }
+.sk-total .lbl { font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.sk-total b { font-family: var(--font-display); font-weight: 400; font-size: 1.9rem; color: var(--accent); }
+.sk-total .of { font-weight: 700; color: var(--muted); font-size: .85rem; }
+.team-sk-grid { margin-top: 1rem; }
+.team-sk-body { padding: .8rem; display: grid; gap: .4rem; justify-items: center; }
+.team-sk-body .sk-total { justify-self: stretch; justify-items: center; }
+.team-radar { width: 100%; max-width: 420px; }
+
 /* ===== smartphone ===== */
 @media (max-width: 600px) {
   /* radar a tutta larghezza: la card perde i margini laterali di main */

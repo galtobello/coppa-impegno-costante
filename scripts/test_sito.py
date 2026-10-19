@@ -56,7 +56,11 @@ async def new_page(b, errs, vp=(390, 844), scheme="dark", mock=False):
 async def settle(pg):
     """Aspetta che la pagina abbia finito di caricare (niente 'Caricamento…')."""
     await pg.wait_for_timeout(120)
-    await pg.wait_for_function("!(document.querySelector('#app')?.innerText || '').startsWith('Caricamento')", timeout=25000)
+    try:
+        await pg.wait_for_function("!(document.querySelector('#app')?.innerText || '').startsWith('Caricamento')", timeout=25000)
+    except Exception:
+        txt = (await pg.locator("#app").inner_text())[:120].replace("\n", " | ")
+        raise RuntimeError(f"pagina ferma su {pg.url.split('#')[-1]} ({pg.url.split('?')[-1].split('#')[0]}): {txt}")
     await pg.wait_for_timeout(250)
 
 
@@ -101,6 +105,9 @@ async def _giro_reale_vp(pg, vp, scheme):
             for j in sorted({0, n // 2, n - 1}) if n else []:
                 await pg.locator(".match-card").nth(j).click(); await settle(pg)
                 await check_page(pg, f"{L} partita s{i}#{j}")
+                ok(await pg.locator(".team-sk").count() == 2, f"{L}: due card caratteristiche di squadra (s{i}#{j})")
+                for card in await pg.locator(".team-sk .sk-total b").all_text_contents():
+                    ok(re.fullmatch(r"\d{1,2}\.\d", card) is not None, f"{L}: valore medio squadra con un decimale ({card})")
                 ok(await pg.locator(".cmt-del").count() == 0, f"{L}: cestino commenti visibile senza accesso")
                 await go(pg, BASE + "#/partite", 1200)
                 await pg.wait_for_selector("select[data-season]")
@@ -114,6 +121,9 @@ async def _giro_reale_vp(pg, vp, scheme):
             await go(pg, BASE + "#/giocatori", 1200)
             await pg.locator(".player-card:not(.hidden)").nth(j).click(); await settle(pg)
             ok(await pg.locator("#radar .r-label").count() == 6, f"{L}: radar a 6 assi (giocatore #{j})")
+            labels = await pg.locator("#radar .r-val").all_text_contents()
+            total = await pg.locator(".skills .sk-total b").text_content()
+            ok(str(sum(int(x) for x in labels)) == total.strip(), f"{L}: valore generale = somma dei valori ({labels} → {total})")
             ok(await pg.locator(".sk-seg").count() == 0, f"{L}: editor radar visibile senza accesso")
             await check_page(pg, f"{L} profilo#{j}")
         # cambio pagina rapido: la pagina lasciata a metà non deve sovrascrivere quella nuova
