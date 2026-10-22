@@ -226,6 +226,50 @@ async def _giro_mock(b, errs):
             ok(await pg.evaluate("window.__skills && window.__skills.lancio === 4"), "coach: caratteristiche salvate")
         await check_page(pg, f"{role} profilo"); await pg.context.close()
 
+    # crea squadre: solo chi può inserire tabellini
+    pg = await new_page(b, errs, mock=True)
+    await go(pg, U("player") + "#/partite", 1500)
+    ok(await pg.locator('a[href="#/squadre"]').count() == 0, "player: niente Crea squadre")
+    await go(pg, U("player") + "#/squadre", 1500)
+    ok(await pg.locator("#tm-pool").count() == 0, "player: pagina Crea squadre non accessibile")
+    await pg.context.close()
+    for role, vp, scheme in [("scorekeeper", (360, 740), "dark"), ("coach", (1280, 900), "light"), ("admin", (390, 844), "light")]:
+        L = f"{role} squadre {vp[0]}"
+        pg = await new_page(b, errs, vp, scheme, mock=True)
+        await go(pg, U(role, "&seedskills") + "#/partite", 1500)
+        await check_page(pg, f"{L} partite")
+        await pg.locator('a[href="#/squadre"]').click(); await settle(pg)
+        ok(await pg.locator("#tm-make").is_disabled(), f"{L}: crea disabilitato senza presenti")
+        for i in range(11): await pg.locator("#tm-pool .pick").nth(i).click()
+        ok(await pg.locator("#tm-pool .pick.on").count() == 11, f"{L}: presenti segnati")
+        await pg.locator("#tm-pool .pick.on").first.click()            # tolgo un presente
+        ok("10" in await pg.locator("#tm-sum").inner_text(), f"{L}: conteggio presenti")
+        await check_page(pg, f"{L} presenti")
+        await pg.click("#tm-make"); await pg.wait_for_selector("#tm-result .board")
+        nb, nn = [await pg.locator(f"#tm-result .board.{t} .tag").count() for t in ("bianca", "nera")]
+        ok((nb, nn) == (5, 5), f"{L}: squadre 5 vs 5 ({nb} vs {nn})")
+        ok(await pg.locator("#tm-result tbody tr").count() == 7, f"{L}: tabella equilibrio (6 assi + totale)")
+        ok(await pg.locator("#tm-result .team-sk").count() == 2, f"{L}: radar delle due squadre")
+        diff = await pg.locator("#tm-result tbody tr:last-child td:last-child").inner_text()
+        ok(abs(float(diff.replace("+", ""))) <= 1, f"{L}: valore generale equilibrato ({diff})")
+        await check_page(pg, f"{L} proposta")
+        first = sorted(await pg.locator("#tm-result .board.bianca .tag").all_inner_texts())
+        await pg.click("#tm-make"); await pg.wait_for_timeout(300)
+        again = sorted(await pg.locator("#tm-result .board.bianca .tag").all_inner_texts())
+        other = sorted(await pg.locator("#tm-result .board.nera .tag").all_inner_texts())
+        ok(again != first and other != first, f"{L}: rigenera propone squadre diverse")
+        await pg.locator("#tm-result .board.bianca .tag").first.click()  # sposto un giocatore a mano
+        nb, nn = [await pg.locator(f"#tm-result .board.{t} .tag").count() for t in ("bianca", "nera")]
+        ok((nb, nn) == (4, 6), f"{L}: spostamento manuale ({nb} vs {nn})")
+        await pg.click("#tm-save"); await pg.wait_for_url("**#/partita/**"); await settle(pg)
+        saved = await pg.evaluate("window.__saved")
+        ok(saved and len(saved["bianca"]) == 4 and len(saved["nera"]) == 6 and saved["result"] is None, f"{L}: salvato come tabellino senza risultato ({saved})")
+        await pg.locator('a[href^="#/tabellino/"]').click(); await settle(pg)
+        ok(await pg.locator("#board-nera .tag").count() == 6, f"{L}: le squadre create si modificano dal tabellino")
+        await pg.click('#res-seg [data-r="nera"]'); await pg.click("#btn-save"); await settle(pg)
+        ok(await pg.evaluate("window.__saved.result") == "nera", f"{L}: risultato inserito a mano")
+        await pg.context.close()
+
     # organizzatore: cancella commento, tutte le schede admin, richieste
     for vp, scheme in [((390, 844), "dark"), ((1280, 900), "light")]:
         pg = await new_page(b, errs, vp, scheme, mock=True)

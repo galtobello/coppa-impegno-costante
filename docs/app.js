@@ -1,5 +1,6 @@
-import * as api from "./api.js?v=202610190907";
-import { DEMO } from "./api.js?v=202610190907";
+import * as api from "./api.js?v=202610221557";
+import { DEMO } from "./api.js?v=202610221557";
+import { makeTeams, teamStats } from "./squadre.js?v=202610221557";
 
 // ============================================================== stato & utilità
 const S = {
@@ -72,7 +73,7 @@ function renderNav() {
 }
 function markNav(hash) {
   const base = "#/" + (hash.split("/")[1] || "");
-  const alias = { "#/storico": "#/", "#/partita": "#/partite", "#/giocatore": "#/giocatori", "#/vota": "#/area", "#/tabellino": "#/area", "#/login": "#/area", "#/registrati": "#/area" };
+  const alias = { "#/storico": "#/", "#/partita": "#/partite", "#/giocatore": "#/giocatori", "#/vota": "#/area", "#/tabellino": "#/area", "#/squadre": "#/partite", "#/login": "#/area", "#/registrati": "#/area" };
   const act = alias[base] || base;
   document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("active", a.dataset.h === act));
 }
@@ -97,6 +98,7 @@ const routes = [
   [/^#\/(login|registrati)$/, viewLogin],
   [/^#\/area$/, viewArea],
   [/^#\/tabellino(?:\/([\w-]+))?$/, viewScoreForm],
+  [/^#\/squadre$/, viewTeamMaker],
   [/^#\/vota\/([\w-]+)$/, viewVote],
 ];
 // Ogni navigazione ha un numero: se nel frattempo ne parte un'altra, il risultato della vecchia
@@ -247,7 +249,7 @@ async function viewMatches() {
       <div class="meta">${resultChip(m)}${m.is_valid ? "" : (m.result ? '<span class="chip bad">Non valida</span>' : "")}${m.voting_open ? '<span class="chip info">Voto aperto</span>' : ""}
         ${(momBy[m.id] || []).map((x) => `<span class="chip">${x.source === "mvp" ? "⭐ MVP" : "🏅 MoM"} ${esc(nick(x.player_id))}</span>`).join("")}</div>
     </div>`).join("");
-  return `${demoBanner()}<div class="page-head"><div class="grow"><h3>Partite</h3><h1>Tabellini</h1></div>${seasonSelect()}${canScore() ? '<a class="btn primary hide-sm" href="#/tabellino">+ Nuovo tabellino</a>' : ""}</div>${canScore() ? '<a class="fab" href="#/tabellino" aria-label="Nuovo tabellino">+</a>' : ""}
+  return `${demoBanner()}<div class="page-head"><div class="grow"><h3>Partite</h3><h1>Tabellini</h1></div>${seasonSelect()}${canScore() ? '<a class="btn" href="#/squadre">🎲 Crea squadre</a><a class="btn primary hide-sm" href="#/tabellino">+ Nuovo tabellino</a>' : ""}</div>${canScore() ? '<a class="fab" href="#/tabellino" aria-label="Nuovo tabellino">+</a>' : ""}
     ${matches.length ? `<div class="grid cols-2">${cards}</div>` : `<div class="empty">Nessuna partita ancora registrata.</div>`}`;
 }
 
@@ -853,6 +855,132 @@ async function viewScoreForm(id) {
 
     <div class="savebar"><div id="sum" class="small"></div><a class="btn" href="${m ? "#/partita/" + m.id : "#/partite"}">Annulla</a><button class="btn primary" type="submit" id="btn-save">Salva</button></div>
   </form>`;
+}
+
+// ============================================================== SQUADRE EQUILIBRATE
+// 1) si segnano i presenti, 2) l'algoritmo propone due squadre equilibrate sui sei assi e diverse
+// dalle ultime partite, 3) si possono spostare giocatori o rigenerare, 4) si salva come tabellino.
+async function viewTeamMaker() {
+  const later = laterFor();
+  if (!canScore()) { location.hash = "#/login"; return ""; }
+  const players = S.players.filter((p) => p.active);
+  const skillsBy = Object.fromEntries((await api.getSkillsFor(players.map((p) => p.id))).map((x) => [x.player_id, x]));
+  const present = new Set();
+  let teams = null;                        // { bianca: [ids], nera: [ids], again, both }
+  const seen = [];                         // divisioni già proposte: "rigenera" non le ripropone
+  let history = null;                      // ultime partite (caricate al primo "crea squadre")
+  const byNick = (a, b) => nick(a).localeCompare(nick(b), "it");
+
+  // ultime partite giocate fino alla data scelta, la più recente per prima
+  const loadHistory = async (date) => {
+    const ms = [];
+    for (const s of [...S.seasons].sort((a, b) => b.starts_on.localeCompare(a.starts_on))) {
+      ms.push(...(await api.getMatches(s.id)).filter((m) => m.played_on <= date));
+      if (ms.length >= 6) break;
+    }
+    const last = ms.sort((a, b) => b.played_on.localeCompare(a.played_on) || String(b.created_at || "").localeCompare(String(a.created_at || ""))).slice(0, 6);
+    const mps = await api.getMatchPlayers(last.map((m) => m.id));
+    return last.map((m) => ({ bianca: mps.filter((x) => x.match_id === m.id && x.team === "bianca").map((x) => x.player_id),
+                              nera: mps.filter((x) => x.match_id === m.id && x.team === "nera").map((x) => x.player_id) }));
+  };
+
+  const renderPool = () => {
+    const q = $("#tm-q").value.trim().toLowerCase();
+    if (!$("#tm-pool")) return;          // nel frattempo l'utente è andato altrove
+    $("#tm-pool").innerHTML = players.filter((p) => !q || p.nickname.toLowerCase().includes(q))
+      .map((p) => `<button type="button" class="pick ${present.has(p.id) ? "on" : ""}" data-p="${p.id}" aria-pressed="${present.has(p.id)}">${esc(p.nickname)}${skillsBy[p.id] ? "" : ' <span class="chip mini" title="Caratteristiche non ancora valutate">nv</span>'}</button>`).join("")
+      || `<span class="muted small">Nessun giocatore trovato</span>`;
+    const n = present.size, unrated = [...present].filter((id) => !skillsBy[id]).length;
+    $("#tm-sum").innerHTML = `<b>${n}</b> present${n === 1 ? "e" : "i"}${unrated ? ` · <span class="warn">${unrated} non valutat${unrated === 1 ? "o" : "i"}</span>` : ""}`;
+    $("#tm-make").disabled = n < 4;
+  };
+
+  const renderTeams = () => {
+    const box = $("#tm-result");
+    $("#tm-make").innerHTML = teams ? "🎲 Rigenera" : "🎲 Crea squadre";
+    $("#tm-save").style.display = teams ? "" : "none";
+    if (!teams) { box.innerHTML = ""; return; }
+    const { stats } = teamStats(teams.bianca, teams.nera, skillsBy);
+    const keys = Object.keys(SKILL_DEFAULTS);
+    const f1 = (x) => x.toFixed(1);
+    const diffChip = (d, big) => `<span class="chip ${Math.abs(d) <= big / 2 ? "ok" : Math.abs(d) <= big ? "warn" : "bad"}">${d > 0 ? "+" : ""}${f1(d)}</span>`;
+    const board = (t) => `<div class="board ${t}"><h4>Squadra ${t === "bianca" ? "Bianca" : "Nera"} <span class="n">${teams[t].length}</span></h4>
+      <div class="list">${[...teams[t]].sort(byNick).map((id) => `<button type="button" class="tag" data-mv="${id}" title="Sposta nell'altra squadra">${esc(nick(id))}${skillsBy[id] ? "" : " <small>nv</small>"}<span aria-hidden="true">⇄</span></button>`).join("")}</div></div>`;
+    box.innerHTML = `<h2 style="margin:1.4rem 0 .6rem">Squadre proposte</h2>
+      <p class="small muted" style="margin:0 0 .6rem">Tocca un giocatore per spostarlo nell'altra squadra. Le medie si aggiornano subito.</p>
+      <div class="boards">${board("bianca")}${board("nera")}</div>
+      <div class="card" style="margin-top:.8rem"><h2>Equilibrio</h2>
+        <div class="table-wrap" style="border:0"><table><thead><tr><th class="name">Media</th><th>Bianca</th><th>Nera</th><th>Diff.</th></tr></thead><tbody>
+        ${keys.map((k) => `<tr><td class="name">${esc(skillLabel(k))}</td><td>${f1(stats.bianca[k])}</td><td>${f1(stats.nera[k])}</td><td>${diffChip(stats.bianca[k] - stats.nera[k], 0.5)}</td></tr>`).join("")}
+        <tr><td class="name">Valore generale</td><td><b>${f1(stats.bianca.total)}</b></td><td><b>${f1(stats.nera.total)}</b></td><td>${diffChip(stats.bianca.total - stats.nera.total, 1)}</td></tr>
+        </tbody></table></div>
+        <p class="small muted" style="margin:.6rem 0 0">Medie sui soli giocatori valutati (Bianca ${stats.bianca.rated}/${stats.bianca.size}, Nera ${stats.nera.rated}/${stats.nera.size}).
+        ${teams.both ? `Coppie di compagni già insieme nell'ultima partita: <b>${teams.again}</b> su ${teams.both}.` : ""}</p></div>
+      <div class="grid cols-2 team-sk-grid" style="margin:.8rem 0">${teamSkillsCard("bianca", teams.bianca, skillsBy)}${teamSkillsCard("nera", teams.nera, skillsBy)}</div>`;
+    ["bianca", "nera"].forEach((t) => { fitRadar(`#radar-${t} svg`); document.fonts?.ready.then(() => fitRadar(`#radar-${t} svg`)); });
+  };
+
+  const make = () => guard(async () => {
+    const btn = $("#tm-make"); btn.disabled = true;
+    try {
+      history ||= await loadHistory($("#tm-date").value);
+      if (!$("#tm-result")) return;
+      const t = makeTeams([...present], skillsBy, history, { avoid: seen });
+      seen.push(t.key);
+      const last = teamStats(t.bianca, t.nera, skillsBy, history[0]);
+      teams = { bianca: t.bianca, nera: t.nera, again: last.again, both: last.both };
+      renderTeams();
+      if (seen.length === 1) $("#tm-result").scrollIntoView({ behavior: "smooth", block: "start" });
+    } finally { renderPool(); }
+  });
+
+  later(() => {
+    $("#tm-pool").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-p]"); if (!b) return;
+      present.has(b.dataset.p) ? present.delete(b.dataset.p) : present.add(b.dataset.p);
+      if (navigator.vibrate) navigator.vibrate(8);
+      teams = null; seen.length = 0; renderTeams(); renderPool();      // presenti cambiati: le squadre vanno rifatte
+    });
+    $("#tm-q").oninput = renderPool;
+    $("#tm-date").onchange = () => { history = null; };
+    $("#tm-none").onclick = () => { present.clear(); teams = null; seen.length = 0; renderTeams(); renderPool(); };
+    $("#tm-make").onclick = make;
+    $("#tm-result").addEventListener("click", (e) => {
+      const mv = e.target.closest("[data-mv]"); if (!mv) return;
+      const id = mv.dataset.mv, from = teams.bianca.includes(id) ? "bianca" : "nera", to = from === "bianca" ? "nera" : "bianca";
+      teams[from] = teams[from].filter((x) => x !== id); teams[to] = [...teams[to], id];
+      const last = teamStats(teams.bianca, teams.nera, skillsBy, history?.[0]);
+      Object.assign(teams, { again: last.again, both: last.both });
+      renderTeams();
+    });
+    $("#tm-save").onclick = () => guard(async () => {
+      if (teams.bianca.length < 2 || teams.nera.length < 2) throw new Error("Servono almeno 2 giocatori per squadra");
+      const btn = $("#tm-save"); btn.disabled = true;
+      try {
+        const id = await api.saveMatch({ seasonId: $("#tm-season").value, playedOn: $("#tm-date").value, result: null, bianca: teams.bianca, nera: teams.nera, notes: "" });
+        toast("Tabellino salvato: risultato e squadre si modificano da «Modifica»"); location.hash = "#/partita/" + id;
+      } finally { btn.disabled = false; }
+    });
+    renderPool();
+  });
+
+  const seasonId = currentSeason()?.id;
+  return `<div class="page-head"><div class="grow"><h3>Partite</h3><h1>Crea squadre</h1></div></div>
+    <div class="card">
+      <p class="small muted" style="margin-top:0">Segna chi è presente e premi <b>Crea squadre</b>: le squadre vengono divise in modo equilibrato su tutti gli assi delle caratteristiche
+        e, a parità di equilibrio, evitando di rimettere insieme i compagni delle ultime partite. Chi non è ancora valutato (<span class="chip mini">nv</span>) conta come un giocatore medio e viene distribuito tra le due squadre.</p>
+      <div class="grid cols-2 tight">
+        <div><label>Stagione</label><select id="tm-season">${S.seasons.map((s) => `<option value="${s.id}" ${s.id === seasonId ? "selected" : ""}>${esc(s.name)}${s.is_current ? " · in corso" : ""}</option>`).join("")}</select></div>
+        <div><label>Data</label><input type="date" id="tm-date" value="${today()}" required /></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="row" style="justify-content:space-between"><h2 style="margin:0">Presenti</h2><button type="button" class="linklike small" id="tm-none" style="padding:0">Deseleziona tutti</button></div>
+      <input type="search" id="tm-q" placeholder="Cerca…" autocomplete="off" style="margin:.6rem 0" />
+      <div class="pick-grid" id="tm-pool"></div>
+    </div>
+    <div id="tm-result"></div>
+    <div class="savebar"><div id="tm-sum" class="small"></div><a class="btn hide-sm" href="#/partite">Annulla</a><button type="button" class="btn" id="tm-make" disabled>🎲 Crea squadre</button><button type="button" class="btn primary" id="tm-save" style="display:none">Salva</button></div>`;
 }
 
 // ============================================================== VOTA

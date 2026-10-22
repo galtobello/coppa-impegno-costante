@@ -8,6 +8,7 @@ docs/                     il sito (HTML/CSS/JS, nessun build)
   index.html
   app.js                  interfaccia e logica
   api.js                  accesso ai dati (Supabase, o demo se non configurato)
+  squadre.js              algoritmo delle squadre equilibrate (Partite → Crea squadre)
   config.js               <-- qui vanno URL e chiave del progetto Supabase
   demo-data.json          dati 2025/26 per la modalità demo
   img/                    loghi Disc & Disc ottimizzati per il web, favicon e icone
@@ -21,7 +22,7 @@ scripts/                  script di supporto e test (non servono per usare l'app
 
 * **Pubblico (senza login)**: classifica Impegno Costante, Coppa Efficienza, classifica MVP, tabellini, profili giocatori (con il radar delle caratteristiche: Lancio, Ricezione, Taglio, Difesa, Velocità, Resistenza, da 0 a 5, modificabile solo da organizzatori e allenatori), albo d'oro, regolamento.
 * **Giocatore**: dopo una partita in cui ha giocato vota i compagni (1–10 + commento) per N giorni a partire dal giorno della partita (7 = fino al giorno prima della partita successiva: con le partite del venerdì si vota fino al giovedì). I voti sono anonimi: gli altri vedono solo la media. I commenti invece sono firmati con il nickname di chi li scrive, e l'organizzatore li può cancellare (il voto resta). Alla **chiusura delle votazioni** chi ha la media più alta (con almeno N voti; a pari media più giocatori) è l'**MVP** della partita e prende il punto "Man of the Match".
-* **Score keeper** e **Allenatore**: inseriscono e correggono i tabellini (squadra bianca/nera, vincente, punteggio), assegnano eventuali MoM manuali.
+* **Score keeper** e **Allenatore**: inseriscono e correggono i tabellini (squadra bianca/nera, vincente, punteggio), assegnano eventuali MoM manuali, e possono far **creare le squadre** in automatico (*Partite → Crea squadre*).
 * **Organizzatore (admin)**: tutto quanto sopra, più anagrafica giocatori, approvazione delle registrazioni, ruoli ed eliminazione account, stagioni e loro parametri, testi e albo d'oro.
 
 Le regole (punti per vittoria/pareggio/MoM, minimo giocatori per partita valida, partite minime per coppa ed efficienza, giorni di voto, voti minimi per l'MVP) sono **parametri di ogni stagione**, modificabili dall'area admin.
@@ -63,6 +64,18 @@ La chiave *anon* è fatta per stare nel sito pubblico: non dà nessun potere olt
 2. I giocatori che erano in campo ricevono in *Area* la partita da votare: slider 1–10 e commento facoltativo per ogni compagno (non per sé stessi; "Salta" per chi non si vuole valutare). Si può tornare a modificare finché le votazioni sono aperte.
 3. L'MVP, le classifiche e le medie si aggiornano da soli.
 
+## Crea squadre
+
+In *Partite → 🎲 Crea squadre* (score keeper, allenatore, organizzatore) si segnano i presenti e si preme **Crea squadre**:
+
+* le squadre hanno lo stesso numero di giocatori (±1) e **medie simili su ognuno dei sei assi** del radar e sul valore generale; la pagina mostra la tabella delle medie e i due radar;
+* a parità di equilibrio si evitano le coppie di compagni delle **ultime 6 partite** (le più recenti pesano di più), e non si ripropone mai la stessa divisione dell'ultima partita;
+* chi non è ancora valutato conta come un giocatore medio e i non valutati vengono distribuiti tra le due squadre;
+* **Rigenera** propone ogni volta una divisione diversa tra quelle quasi equivalenti; toccando un giocatore lo si sposta nell'altra squadra;
+* **Salva** crea il tabellino senza risultato: squadre, risultato e punteggio si modificano poi da *Modifica*, come per ogni partita.
+
+Nessuna modifica al database: usa le tabelle e la funzione `save_match` già esistenti.
+
 ## Note tecniche
 
 * Prima di pubblicare una modifica al sito esegui `sh scripts/versione.sh`: aggiorna il numero di versione (`?v=...`) dei file, così chi ricarica la pagina scarica subito la versione nuova invece di quella in cache.
@@ -71,4 +84,5 @@ La chiave *anon* è fatta per stare nel sito pubblico: non dà nessun potere olt
 * Modalità demo: finché `config.js` contiene i valori di esempio, il sito mostra i dati 2025/26 da `demo-data.json` in sola lettura.
 * Per aggiornare lo schema in futuro basta rieseguire `0001_schema.sql` (è idempotente).
 * **Prima di pubblicare**: con il server locale avviato (`cd docs && python3 -m http.server 8787`) esegui `python3 scripts/test_sito.py`. Prova tutte le pagine pubbliche sul database vero (solo letture, telefono/desktop, tema chiaro/scuro) e tutti i ruoli con un database finto e rete lenta simulata; segnala errori, testi come "undefined", pagine che sbordano.
+* `node scripts/test_squadre.mjs` verifica l'algoritmo delle squadre (divisione, equilibrio rispetto all'ottimo esatto, varietà tra partite, rigenera, tempi).
 * Test locali (opzionali): `scripts/test_local.sql` + `scripts/test_rls.sql` verificano le policy su un Postgres locale; `scripts/test_ui.py` esercita l'interfaccia con Playwright.

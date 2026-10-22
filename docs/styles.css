@@ -454,3 +454,9 @@ input.search { margin-bottom: 1rem; padding-left: 2.4rem; background: var(--card
   .brand .title { font-size: .9rem; }
   nav.bottom a { padding: .35rem .25rem; font-size: .62rem; }
 }
+
+/* ---- crea squadre ---- */
+.pick.on { background: color-mix(in srgb, var(--accent) 22%, var(--card-2)); border-color: var(--accent); }
+.pick.on::before { content: "✓ "; color: var(--accent); }
+.pick .chip.mini { vertical-align: middle; }
+.board .tag small { opacity: .6; font-size: .7rem; }
