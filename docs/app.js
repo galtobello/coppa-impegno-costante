@@ -1,6 +1,6 @@
-import * as api from "./api.js?v=202610261137";
-import { DEMO } from "./api.js?v=202610261137";
-import { makeTeams, teamStats } from "./squadre.js?v=202610261137";
+import * as api from "./api.js?v=202610261155";
+import { DEMO } from "./api.js?v=202610261155";
+import { makeTeams, teamStats } from "./squadre.js?v=202610261155";
 
 // ============================================================== stato & utilità
 const S = {
@@ -200,7 +200,7 @@ async function standingsBody(s, isCurrent, later = (fn) => setTimeout(fn)) {
 
   const tableMvp = byMvp.length ? `<div class="table-wrap"><table><thead><tr><th>#</th><th class="name">Giocatore</th><th>Media</th><th>Voti</th><th class="opt">Partite votate</th><th>MVP</th></tr></thead><tbody>
     ${byMvp.map((r, i) => `<tr class="${r.player_id === me ? "me" : ""}" data-go="#/giocatore/${r.player_id}"><td class="rank">${i + 1}</td><td class="name">${esc(r.nickname)}</td><td class="pts">${Number(r.avg_score).toFixed(2)}</td><td>${r.votes}</td><td class="opt">${r.rated_matches}</td><td>${r.mvp_count ? "⭐ " + r.mvp_count : "–"}</td></tr>`).join("")}
-    </tbody></table></div>` : `<div class="empty">Ancora nessuna votazione in questa stagione. Dopo ogni partita i giocatori in campo votano i compagni: chi ha la media più alta è l'MVP.</div>`;
+    </tbody></table></div><p class="small muted">Contano solo le partite con le votazioni chiuse: la classifica si aggiorna alla chiusura di ogni votazione.</p>` : `<div class="empty">Ancora nessuna votazione chiusa in questa stagione. Dopo ogni partita i giocatori in campo votano i compagni: alla chiusura chi ha la media più alta è l'MVP.</div>`;
 
   later(() => {
     const root = $("#app");
@@ -220,6 +220,12 @@ async function standingsBody(s, isCurrent, later = (fn) => setTimeout(fn)) {
 // commento firmato (il voto resta anonimo); l'organizzatore lo può cancellare
 const commentHtml = (c, who) => `<div class="comment"><div class="who"><span>${who}</span>${isAdmin() && c.rating_id ? `<button type="button" class="cmt-del" data-rmc="${c.rating_id}" aria-label="Cancella commento" title="Cancella commento">🗑</button>` : ""}</div>${esc(c.comment)}</div>`;
 const author = (c) => esc(c.author_nickname || nick(c.author_id) || "?");
+// commenti raggruppati: groups = [{ key, head (html), items: [commenti] }]; who(c) = intestazione del singolo commento
+const commentGroups = (groups, who, empty) => groups.length ? groups.map((g) => `<div class="cmt-group">
+    <div class="cmt-head" ${g.go ? `data-go="${g.go}"` : ""}>${g.head}<span class="chip mini">${g.items.length}</span></div>
+    ${g.items.map((c) => commentHtml(c, who(c))).join("")}</div>`).join("") : `<p class="muted">${empty}</p>`;
+const groupBy = (list, key) => { const m = new Map(); list.forEach((x) => { const k = key(x); if (!m.has(k)) m.set(k, []); m.get(k).push(x); }); return m; };
+const byDate = (a, b) => String(a.created_at || "").localeCompare(String(b.created_at || ""));
 // un solo gestore delegato su #app: funziona per qualunque pagina e indipendentemente da quando arrivano i dati
 function bindCommentDelete() {
   $("#app").addEventListener("click", (e) => {
@@ -239,6 +245,26 @@ function resultChip(m) {
   return `<span class="chip ok">Vince ${m.result === "bianca" ? "Bianca" : "Nera"}</span>`;
 }
 const hasScore = (m) => m.score_bianca != null && m.score_nera != null;
+const TEAM_LABEL = { bianca: "Bianca", nera: "Nera" };
+// pagina partita: un gruppo per giocatore commentato, prima la Bianca poi la Nera, in ordine di nickname
+function matchCommentGroups(comments, mps) {
+  const teamOf = Object.fromEntries(mps.map((p) => [p.player_id, p.team]));
+  const order = (id) => (teamOf[id] === "bianca" ? "0" : teamOf[id] === "nera" ? "1" : "2") + nick(id).toLowerCase();
+  return [...groupBy(comments, (c) => c.player_id)].sort(([a], [b]) => order(a).localeCompare(order(b), "it")).map(([pid, items]) => ({
+    go: `#/giocatore/${pid}`, items: items.sort(byDate),
+    head: `<span class="cmt-who">${avatar(nick(pid))}<b>${esc(nick(pid))}</b>${teamOf[pid] ? `<span class="chip mini team-${teamOf[pid]}">${TEAM_LABEL[teamOf[pid]]}</span>` : ""}</span>`,
+  }));
+}
+// pagina giocatore: un gruppo per partita, dalla più recente
+function playerCommentGroups(comments, matches) {
+  const mById = Object.fromEntries(matches.map((m) => [m.id, m]));
+  const date = (mid, items) => mById[mid]?.played_on || String(items[0].created_at || "").slice(0, 10);
+  return [...groupBy(comments, (c) => c.match_id)].sort(([a, x], [b, y]) => date(b, y).localeCompare(date(a, x))).map(([mid, items]) => {
+    const m = mById[mid];
+    return { go: `#/partita/${mid}`, items: items.sort(byDate),
+      head: `<span class="cmt-who"><b>${m ? fmtDate(m.played_on) : "Partita"}</b>${m?.team ? `<span class="chip mini team-${m.team}">${TEAM_LABEL[m.team]}</span>` : ""}</span>` };
+  });
+}
 async function viewMatches() {
   if (!S.season) return `<div class="empty">Nessuna stagione.</div>`;
   const [matches, moms] = await Promise.all([api.getMatches(S.season.id), api.getMomPoints(S.season.id)]);
@@ -263,7 +289,10 @@ async function viewMatch(id) {
     for (const s of S.seasons) { const ms = await api.getMatches(s.id); m = ms.find((x) => x.id === id); if (m) { S.season = s; break; } }
     if (!m) return `<div class="empty">Partita non trovata.</div>`;
   }
-  const [mps, ratings, comments, moms] = await Promise.all([api.getMatchPlayers([id]), api.getMatchRatings(id), api.getComments({ matchId: id }), api.getMomPoints(m.season_id)]);
+  const [mps, allRatings, comments, moms] = await Promise.all([api.getMatchPlayers([id]), api.getMatchRatings(id), api.getComments({ matchId: id }), api.getMomPoints(m.season_id)]);
+  // a votazione aperta i voti li vede solo l'organizzatore (lo impone anche il database, vedi 0011)
+  const hideVotes = m.voting_open && !isAdmin();
+  const ratings = hideVotes ? [] : allRatings;
   const skillsBy = Object.fromEntries((await api.getSkillsFor(mps.map((p) => p.player_id)).catch(() => [])).map((x) => [x.player_id, x]));
   later(() => ["bianca", "nera"].forEach((t) => { fitRadar(`#radar-${t} svg`); document.fonts?.ready.then(() => fitRadar(`#radar-${t} svg`)); }));
   const teamIds = (t) => mps.filter((p) => p.team === t).map((p) => p.player_id);
@@ -286,10 +315,11 @@ async function viewMatch(id) {
     <div class="grid cols-2 team-sk-grid">${teamSkillsCard("bianca", teamIds("bianca"), skillsBy)}${teamSkillsCard("nera", teamIds("nera"), skillsBy)}</div>
     ${m.notes ? `<p class="muted">${esc(m.notes)}</p>` : ""}
     <div class="grid cols-2" style="margin-top:1rem">
-      <div class="card"><h2>Valutazioni</h2>${ratings.length ? `<p class="small muted">${((n) => `${n} ${n === 1 ? "voto espresso" : "voti espressi"}`)(ratings.reduce((a, r) => a + r.votes, 0))}. ${m.voting_open ? `Votazioni aperte fino a ${fmtDate(lastVoteDay(m))}: alla chiusura diventa MVP chi ha la media più alta (a pari media, più MVP).` : (mvps.length ? `MVP: <b>${mvps.map((r) => esc(nick(r.player_id))).join(", ")}</b>${m.is_valid ? "" : " (partita non valida: niente punto)"}.` : `Nessun MVP: serviva almeno ${sea.min_votes_mvp} voti.`)}</p>
+      <div class="card"><h2>Valutazioni</h2>${hideVotes ? `<p class="vote-lock">🔒 <span>I voti restano nascosti finché le votazioni sono aperte (fino a <b>${fmtDate(lastVoteDay(m))}</b>). Alla chiusura compaiono le medie e l'MVP, e si aggiorna la classifica MVP.</span></p>`
+        : ratings.length ? `${m.voting_open ? '<p class="vote-lock admin">👁 <span>Votazioni aperte: le medie le vedi solo tu, come organizzatore, fino alla chiusura.</span></p>' : ""}<p class="small muted">${((n) => `${n} ${n === 1 ? "voto espresso" : "voti espressi"}`)(ratings.reduce((a, r) => a + r.votes, 0))}. ${m.voting_open ? `Votazioni aperte fino a ${fmtDate(lastVoteDay(m))}: alla chiusura diventa MVP chi ha la media più alta (a pari media, più MVP).` : (mvps.length ? `MVP: <b>${mvps.map((r) => esc(nick(r.player_id))).join(", ")}</b>${m.is_valid ? "" : " (partita non valida: niente punto)"}.` : `Nessun MVP: serviva almeno ${sea.min_votes_mvp} voti.`)}</p>
         ${[...ratings].sort((a, b) => b.avg_score - a.avg_score).map((r) => `<div class="row" style="justify-content:space-between;padding:.3rem 0;border-bottom:1px solid var(--line)"><span>${r.is_mvp ? "⭐ " : ""}${esc(nick(r.player_id))}</span><span class="row" style="flex:0 0 55%"><div class="bar" style="flex:1"><i style="width:${r.avg_score * 10}%"></i></div><b>${Number(r.avg_score).toFixed(2)}</b><span class="small muted">(${r.votes})</span></span></div>`).join("")}`
         : `<p class="muted">${m.voting_open ? `Ancora nessun voto: chi ha giocato può votare fino a ${fmtDate(lastVoteDay(m))}. Alla chiusura viene assegnato l'MVP.` : "Nessun voto."}</p>`}</div>
-      <div class="card"><h2>Commenti</h2>${comments.length ? comments.map((c) => commentHtml(c, `<b>${author(c)}</b> → ${esc(nick(c.player_id))}`)).join("") : '<p class="muted">Nessun commento.</p>'}</div>
+      <div class="card"><h2>Commenti</h2>${commentGroups(matchCommentGroups(comments, mps), (c) => `da <b>${author(c)}</b>`, "Nessun commento.")}</div>
     </div>`;
 }
 
@@ -416,16 +446,18 @@ async function viewPlayer(id) {
   S.seasons.forEach((s, i) => { ratingsBySeason[s.id] = allRatings[i].find((r) => r.player_id === id); });
   const cur = seasons.find((s) => s.season_id === S.season?.id) || seasons[0];
   // andamento: per ogni partita della stagione risultato (quadratino) e media dei voti ricevuti (barra)
-  const rByMatch = Object.fromEntries(myRatings.map((r) => [r.match_id, r]));
+  // a votazione aperta la media della partita la vede solo l'organizzatore
+  const openIds = new Set(matches.filter((m) => m.voting_open).map((m) => m.id));
+  const rByMatch = Object.fromEntries(myRatings.filter((r) => isAdmin() || !openIds.has(r.match_id)).map((r) => [r.match_id, r]));
   const seasonMatches = matches.filter((m) => m.season_id === cur?.season_id).sort((a, b) => a.played_on.localeCompare(b.played_on));
   const outcome = (m) => !m.result || !m.is_valid ? ["x", "–", m.result ? "non valida" : "da registrare"] : m.result === "pareggio" ? ["n", "N", "pareggio"] : m.result === m.team ? ["v", "V", "vittoria"] : ["p", "P", "sconfitta"];
   const voteCls = (v) => v >= 7 ? "hi" : v >= 5.5 ? "mid" : "lo";
   const trend = seasonMatches.map((m) => {
     const [cls, letter, label] = outcome(m), r = rByMatch[m.id], v = r ? Number(r.avg_score) : null;
-    return `<a class="am" href="#/partita/${m.id}" title="${fmtDate(m.played_on)}: ${label}${v != null ? ` · media voti ${v.toFixed(2)} (${r.votes})` : ""}">
+    return `<a class="am" href="#/partita/${m.id}" title="${fmtDate(m.played_on)}: ${label}${v != null ? ` · media voti ${v.toFixed(2)} (${r.votes})` : m.voting_open ? " · votazione aperta: la media si vede alla chiusura" : ""}">
       <span class="am-date">${fmtShort(m.played_on)}</span><span class="am-res ${cls}">${letter}</span>
       <span class="am-bar">${v != null ? `<i class="${voteCls(v)}" style="height:${v * 10}%"></i>` : ""}</span>
-      <span class="am-vote ${v != null ? voteCls(v) : ""}">${v != null ? v.toFixed(1) : "–"}</span><span class="am-mvp">${r?.is_mvp ? "⭐" : ""}</span></a>`;
+      <span class="am-vote ${v != null ? voteCls(v) : ""}">${v != null ? v.toFixed(1) : m.voting_open ? "🔒" : "–"}</span><span class="am-mvp">${r?.is_mvp ? "⭐" : ""}</span></a>`;
   }).join("");
   const voted = seasonMatches.map((m) => rByMatch[m.id]).filter(Boolean);
   const rr = cur ? ratingsBySeason[cur.season_id] : null;
@@ -439,13 +471,13 @@ async function viewPlayer(id) {
 </div>
     <div class="card" style="margin-top:1rem"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Andamento</h2><span class="small muted">${seasonMatches.length} partite · ${voted.length} con voti</span></div>
       ${seasonMatches.length ? `<div class="trend" id="trend">${trend}</div>
-      <div class="legend"><span><i class="lgd v"></i>vittoria</span><span><i class="lgd n"></i>pareggio</span><span><i class="lgd p"></i>sconfitta</span><span><i class="lgd x"></i>non valida</span><span>barra = media voti ricevuti · ⭐ MVP</span></div>` : '<p class="muted">Nessuna partita in questa stagione.</p>'}</div>` : `<div class="card"><p class="muted">Non ha ancora giocato partite.</p></div>`}
+      <div class="legend"><span><i class="lgd v"></i>vittoria</span><span><i class="lgd n"></i>pareggio</span><span><i class="lgd p"></i>sconfitta</span><span><i class="lgd x"></i>non valida</span><span>barra = media voti ricevuti · ⭐ MVP · 🔒 votazione aperta</span></div>` : '<p class="muted">Nessuna partita in questa stagione.</p>'}</div>` : `<div class="card"><p class="muted">Non ha ancora giocato partite.</p></div>`}
     <div class="grid cols-2" style="margin-top:1rem">
       <div class="card"><h2>Tutte le stagioni</h2><div class="table-wrap" style="box-shadow:none"><table><thead><tr><th class="name">Stagione</th><th>#</th><th>G</th><th>V</th><th>P</th><th>MoM</th><th>Pt</th></tr></thead><tbody>
         ${seasons.sort((a, b) => b.season_name.localeCompare(a.season_name)).map((s) => `<tr><td class="name">${esc(s.season_name)}</td><td>${s.rank_points}</td><td>${s.played}</td><td>${s.wins}</td><td>${s.losses}</td><td>${s.mom}</td><td class="pts">${s.points}</td></tr>`).join("") || '<tr><td colspan="7" class="muted">—</td></tr>'}</tbody></table></div></div>
       <div class="card"><h2>Ultime partite</h2>${matches.slice(0, 8).map((m) => `<div class="row" style="justify-content:space-between;padding:.35rem 0;border-bottom:1px solid var(--line)" data-go="#/partita/${m.id}"><span>${fmtDate(m.played_on)} · <span class="muted small">${m.team}</span></span>${resultChip(m)}</div>`).join("") || '<p class="muted">—</p>'}</div>
     </div>
-    <div class="card" style="margin-top:1rem"><h2>Commenti ricevuti</h2>${comments.length ? comments.map((c) => commentHtml(c, `da <b>${author(c)}</b> · ${new Date(c.created_at).toLocaleDateString("it-IT")}`)).join("") : '<p class="muted">Nessun commento ancora.</p>'}</div>`;
+    <div class="card" style="margin-top:1rem"><h2>Commenti ricevuti</h2>${commentGroups(playerCommentGroups(comments, matches), (c) => `da <b>${author(c)}</b>`, "Nessun commento ancora.")}</div>`;
 }
 
 // ============================================================== ALBO D'ORO & REGOLAMENTO

@@ -430,7 +430,8 @@ select m.id, m.season_id, m.played_on, m.result, m.notes, m.created_at, m.update
 from public.matches m
 join public.seasons s on s.id = m.season_id;
 
--- Media voti per giocatore in ogni partita (anonima) + flag MVP, solo a votazioni chiuse
+-- Media voti per giocatore in ogni partita (anonima) + flag MVP, solo a votazioni chiuse;
+-- finché la votazione è aperta le medie le vede solo l'organizzatore (vedi 0011)
 create or replace view public.v_match_ratings as
 with agg as (
   select r.match_id, r.rated_id as player_id,
@@ -452,8 +453,10 @@ ranked as (
 select match_id, player_id,
        round(avg_score, 2) as avg_score,
        votes,
-       (voting_closed and votes >= min_votes_mvp and avg_score = best_score) as is_mvp
-from ranked;
+       (voting_closed and votes >= min_votes_mvp and avg_score = best_score) as is_mvp,
+       voting_closed
+from ranked
+where voting_closed or (select app.is_admin());   -- a votazione aperta solo l'organizzatore (vedi 0011)
 
 -- Commenti ricevuti, firmati; il voto resta anonimo (vedi 0010)
 create or replace view public.v_player_comments as
@@ -528,6 +531,7 @@ select m.season_id, r.player_id,
        count(*) filter (where r.is_mvp)::int as mvp_count
 from public.v_match_ratings r
 join public.matches m on m.id = r.match_id
+where r.voting_closed                              -- la classifica MVP si aggiorna alla chiusura (0011)
 group by m.season_id, r.player_id;
 
 grant select on public.v_matches, public.v_match_ratings, public.v_player_comments,

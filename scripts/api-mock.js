@@ -20,9 +20,14 @@ const recompute = () => {
   for (const m of D.v_matches) {
     const mp = D.match_players.filter((x) => x.match_id === m.id); const s = seasonOf(m.season_id);
     m.n_players = mp.length; m.n_bianca = mp.filter((x) => x.team === "bianca").length; m.n_nera = m.n_players - m.n_bianca;
-    m.is_valid = !!m.result && m.n_players >= s.min_players_valid; m.voting_open = true;
+    m.is_valid = !!m.result && m.n_players >= s.min_players_valid;
   }
+  // votazione aperta sulle 3 partite più recenti di ogni stagione (e su quelle create nei test), chiusa sulle altre
+  for (const s of D.seasons) D.v_matches.filter((m) => m.season_id === s.id).sort((a, b) => b.played_on.localeCompare(a.played_on)).forEach((m, i) => { m.voting_open = m.created_in_test || i < 3; });
 };
+// come la vista v_match_ratings (0011): a votazione aperta le medie le vede solo l'organizzatore
+// ?leak simula un database senza 0011 (medie sempre visibili): il sito deve nasconderle comunque
+const visibleRating = (matchId) => role === "admin" || new URLSearchParams(location.search).has("leak") || !D.v_matches.find((m) => m.id === matchId)?.voting_open;
 const myPlayerId = () => D.players.find((p) => p.nickname === "Thor").id;
 export const auth = {
   async user() { await lag(); return role === "anon" ? null : { id: "u1", email: "test@example.com" }; },
@@ -44,6 +49,7 @@ export async function getMatchPlayers(ids) { await lag(); return D.match_players
 export async function getMomPoints(id) { await lag(); return D.v_mom_points.filter((m) => m.season_id === id); }
 export async function getMatchRatings(id) { await lag();
   const agg = {}; D.ratings.filter((r) => r.match_id === id).forEach((r) => { (agg[r.rated_id] ||= []).push(r.score); });
+  recompute(); if (!visibleRating(id)) return [];
   return Object.entries(agg).map(([player_id, s]) => ({ match_id: id, player_id, avg_score: s.reduce((a, b) => a + b) / s.length, votes: s.length, is_mvp: false }));
 }
 export async function getComments({ matchId, playerId }) { await lag(); return D.ratings.filter((r) => (!matchId || r.match_id === matchId) && (!playerId || r.rated_id === playerId) && r.comment).map((r) => ({ match_id: r.match_id, player_id: r.rated_id, score: null, comment: r.comment, created_at: new Date().toISOString(), rating_id: r.id, author_id: r.rater_id, author_nickname: D.players.find((p) => p.id === r.rater_id)?.nickname })); }
@@ -56,7 +62,7 @@ export async function getPlayerMatches(pid) { await lag();
 export async function getHallOfFame() { await lag(); return D.hall_of_fame; }
 export async function saveMatch({ id, seasonId, playedOn, result, bianca, nera, notes, scoreBianca = null, scoreNera = null }) { await lag();
   const sc = { score_bianca: scoreBianca, score_nera: scoreNera };
-  if (!id) { id = uid(); D.v_matches.push({ id, season_id: seasonId, played_on: playedOn, result, notes, ...sc, season_name: seasonOf(seasonId).name }); }
+  if (!id) { id = uid(); D.v_matches.push({ id, season_id: seasonId, played_on: playedOn, result, notes, ...sc, season_name: seasonOf(seasonId).name, created_in_test: true }); }
   else { Object.assign(D.v_matches.find((m) => m.id === id), { season_id: seasonId, played_on: playedOn, result, notes, ...sc }); D.match_players = D.match_players.filter((mp) => mp.match_id !== id); }
   bianca.forEach((p) => D.match_players.push({ match_id: id, player_id: p, team: "bianca" }));
   nera.forEach((p) => D.match_players.push({ match_id: id, player_id: p, team: "nera" }));
@@ -91,6 +97,7 @@ export async function rejectRegistration(id) { await lag(); Object.assign(D.prof
 export async function deleteUser(id) { await lag(); D.profiles = D.profiles.filter((x) => x.id !== id); window.__deleted = id; }
 export async function getPlayerMatchRatings(pid) { await lag();
   // voti finti deterministici: media 4-9 su ogni partita giocata, MVP sulle medie >= 8.5
-  return D.match_players.filter((mp) => mp.player_id === pid).map((mp, i) => { const v = 4 + ((i * 7) % 11) / 2; return { match_id: mp.match_id, player_id: pid, avg_score: v, votes: 3 + (i % 4), is_mvp: v >= 8.5 }; });
+  recompute();
+  return D.match_players.filter((mp) => mp.player_id === pid && visibleRating(mp.match_id)).map((mp, i) => { const v = 4 + ((i * 7) % 11) / 2; return { match_id: mp.match_id, player_id: pid, avg_score: v, votes: 3 + (i % 4), is_mvp: v >= 8.5 }; });
 }
 export async function getSkillsFor(ids) { await lag(); return Object.values(D.skills ||= {}).filter((x) => ids.includes(x.player_id)); }

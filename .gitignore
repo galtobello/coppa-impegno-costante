@@ -1,2 +1,5 @@
 # sorgenti grafici originali (non servono al sito)
 LOGO varie versioni/
+
+# dipendenze dei test (npm i --no-save @electric-sql/pglite)
+node_modules/
