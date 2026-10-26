@@ -1,6 +1,6 @@
-import * as api from "./api.js?v=202610221557";
-import { DEMO } from "./api.js?v=202610221557";
-import { makeTeams, teamStats } from "./squadre.js?v=202610221557";
+import * as api from "./api.js?v=202610261137";
+import { DEMO } from "./api.js?v=202610261137";
+import { makeTeams, teamStats } from "./squadre.js?v=202610261137";
 
 // ============================================================== stato & utilità
 const S = {
@@ -20,9 +20,11 @@ const isAdmin = () => S.me?.role === "admin";
 const canScore = () => ["admin", "scorekeeper", "coach"].includes(S.me?.role);
 const ROLE_LABEL = { admin: "Organizzatore", coach: "Allenatore", scorekeeper: "Score keeper", player: "Giocatore" };
 // ultimo giorno utile per votare (si vota per voting_days giorni a partire dal giorno della partita)
-const lastVoteDay = (m) => { const d = new Date(m.played_on + "T00:00:00"); d.setDate(d.getDate() + (S.seasons.find((s) => s.id === m.season_id)?.voting_days ?? 7) - 1); return d.toISOString().slice(0, 10); };
+// calcolo in UTC su date pure: niente slittamenti di fuso (in Italia la mezzanotte locale in UTC è ancora il giorno prima)
+const lastVoteDay = (m) => { const d = new Date(m.played_on + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + (S.seasons.find((s) => s.id === m.season_id)?.voting_days ?? 7) - 1); return d.toISOString().slice(0, 10); };
 const myPlayer = () => S.me?.player_id || null;
-const today = () => new Date().toISOString().slice(0, 10);
+// data di oggi in ora italiana (come il database), formato AAAA-MM-GG
+const today = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Rome" });
 
 function toast(msg, err = false) {
   const t = document.createElement("div");
