@@ -1,6 +1,6 @@
-import * as api from "./api.js?v=202610261155";
-import { DEMO } from "./api.js?v=202610261155";
-import { makeTeams, teamStats } from "./squadre.js?v=202610261155";
+import * as api from "./api.js?v=202610261211";
+import { DEMO } from "./api.js?v=202610261211";
+import { makeTeams, teamStats } from "./squadre.js?v=202610261211";
 
 // ============================================================== stato & utilità
 const S = {
@@ -460,6 +460,10 @@ async function viewPlayer(id) {
       <span class="am-vote ${v != null ? voteCls(v) : ""}">${v != null ? v.toFixed(1) : m.voting_open ? "🔒" : "–"}</span><span class="am-mvp">${r?.is_mvp ? "⭐" : ""}</span></a>`;
   }).join("");
   const voted = seasonMatches.map((m) => rByMatch[m.id]).filter(Boolean);
+  // mete fatte e subite dalla squadra in cui ha giocato, sulle partite della stagione con il punteggio inserito
+  const scored = seasonMatches.filter((m) => hasScore(m) && m.team);
+  const other = (t) => (t === "bianca" ? "nera" : "bianca");
+  const goalsFor = scored.reduce((a, m) => a + m["score_" + m.team], 0), goalsAgainst = scored.reduce((a, m) => a + m["score_" + other(m.team)], 0);
   const rr = cur ? ratingsBySeason[cur.season_id] : null;
   later(() => { const t = $("#trend"); if (t) t.scrollLeft = t.scrollWidth; });
   return `<div class="page-head"><div class="grow row">${avatar(p.nickname, "lg")}<div><h3>Giocatore</h3><h1>${esc(p.nickname)}</h1>${p.full_name ? `<div class="muted">${esc(p.full_name)}</div>` : ""}</div></div></div>
@@ -467,7 +471,9 @@ async function viewPlayer(id) {
     ${cur ? `<div class="card"><h2>Stagione ${esc(cur.season_name)}</h2>
       <div class="stats"><div class="stat"><b>${cur.rank_points}°</b><span>posizione</span></div><div class="stat"><b>${cur.points}</b><span>punti</span></div><div class="stat"><b>${cur.played}</b><span>giocate</span></div>
         <div class="stat"><b>${cur.wins}</b><span>vinte</span></div><div class="stat"><b>${cur.losses}</b><span>perse</span></div><div class="stat"><b>${cur.mom}</b><span>MoM/MVP</span></div>
-        <div class="stat"><b>${Number(cur.efficiency).toFixed(0)}%</b><span>efficienza</span></div>${rr ? `<div class="stat"><b>${Number(rr.avg_score).toFixed(2)}</b><span>media voti</span></div>` : ""}</div>
+        <div class="stat"><b>${Number(cur.efficiency).toFixed(0)}%</b><span>efficienza</span></div>${rr ? `<div class="stat"><b>${Number(rr.avg_score).toFixed(2)}</b><span>media voti</span></div>` : ""}
+        <div class="stat"><b>${scored.length ? goalsFor : "–"}</b><span>mete fatte</span></div><div class="stat"><b>${scored.length ? goalsAgainst : "–"}</b><span>mete subite</span></div></div>
+      <p class="small muted" style="margin:.6rem 0 0">Mete fatte e subite dalla sua squadra ${scored.length ? `in ${scored.length} ${scored.length === 1 ? "partita" : "partite"}${scored.length < seasonMatches.length ? ` su ${seasonMatches.length} (le altre non hanno il punteggio)` : ""}` : "(nessuna partita della stagione ha ancora il punteggio)"}.</p>
 </div>
     <div class="card" style="margin-top:1rem"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Andamento</h2><span class="small muted">${seasonMatches.length} partite · ${voted.length} con voti</span></div>
       ${seasonMatches.length ? `<div class="trend" id="trend">${trend}</div>

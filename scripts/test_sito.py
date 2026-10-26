@@ -129,6 +129,8 @@ async def _giro_reale_vp(pg, vp, scheme):
             ok(str(sum(int(x) for x in labels)) == total.strip(), f"{L}: valore generale = somma dei valori ({labels} → {total})")
             ok(await pg.locator(".sk-seg").count() == 0, f"{L}: editor radar visibile senza accesso")
             ok(await pg.locator(".comment").count() == await pg.locator(".cmt-group .comment").count(), f"{L}: commenti raggruppati per partita (giocatore #{j})")
+            mete = [await pg.locator(".stat", has_text=t).locator("b").inner_text() for t in ("mete fatte", "mete subite")] if await pg.locator(".stats").count() else []
+            ok(not mete or all(re.fullmatch(r"\d+|–", x) for x in mete), f"{L}: mete fatte/subite ({mete})")
             await check_page(pg, f"{L} profilo#{j}")
         # cambio pagina rapido: la pagina lasciata a metà non deve sovrascrivere quella nuova
         await go(pg, BASE + "#/giocatori")
@@ -226,6 +228,12 @@ async def _giro_mock(b, errs):
         ok(saved and len(saved["bianca"]) == 3 and len(saved["nera"]) == 3 and saved["result"] == "bianca" and saved["score_bianca"] == 5, f"{role}: tabellino salvato correttamente ({saved})")
         await pg.locator('a[href^="#/tabellino/"]').click(); await settle(pg)
         ok(await pg.locator("#board-bianca .tag").count() == 3, f"{role}: modifica tabellino ricarica le squadre")
+        # mete nella scheda giocatore: la sua squadra ha fatto 5 e subito 3 (unica partita con punteggio)
+        for pid, (f, a) in [(saved["bianca"][0], ("5", "3")), (saved["nera"][0], ("3", "5"))]:
+            await go(pg, U(role) + f"#/giocatore/{pid}", 1500)
+            vals = {(await x.locator("span").inner_text()).lower(): await x.locator("b").inner_text() for x in await pg.locator(".stats .stat").all()}
+            ok(vals.get("mete fatte") == f and vals.get("mete subite") == a, f"{role}: mete fatte/subite nella scheda giocatore ({vals.get('mete fatte')}/{vals.get('mete subite')}, atteso {f}/{a})")
+            await check_page(pg, f"{role} scheda giocatore con mete")
         await go(pg, U(role) + "#/giocatori", 1500); await pg.locator(".player-card").first.click(); await settle(pg)
         has_editor = await pg.locator(".sk-seg").count() == 6
         ok(has_editor == (role == "coach"), f"{role}: editor radar {'presente' if role == 'coach' else 'assente'}")
