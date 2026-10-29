@@ -1,6 +1,6 @@
-import * as api from "./api.js?v=202610261211";
-import { DEMO } from "./api.js?v=202610261211";
-import { makeTeams, teamStats } from "./squadre.js?v=202610261211";
+import * as api from "./api.js?v=202610291027";
+import { DEMO } from "./api.js?v=202610291027";
+import { makeTeams, teamStats } from "./squadre.js?v=202610291027";
 
 // ============================================================== stato & utilità
 const S = {
@@ -517,7 +517,7 @@ async function viewRules() {
     ["scorekeeper", "✍️ Score keeper", `<ul><li>Inserisce e corregge i <b>tabellini</b> e assegna i <b>MoM manuali</b>, come l'allenatore (ma non modifica le caratteristiche).</li></ul>`],
     ["admin", "⚙️ Organizzatore", `<p>Tutto quanto sopra, più <i>Area → Amministrazione</i>:</p><ul>
       <li><b>Utenti</b>: accetta o rifiuta le <b>richieste di registrazione</b>. Accettando, l'utente viene collegato al giocatore con lo stesso nickname, o il giocatore viene creato. Qui assegni i ruoli (Giocatore, Allenatore, Score keeper, Organizzatore) ed elimini un account (il giocatore e le sue statistiche restano).</li>
-      <li><b>Giocatori</b>: anagrafica e giocatori attivi.</li>
+      <li><b>Giocatori</b>: anagrafica e giocatori attivi. Puoi <b>rinominare</b> un giocatore cambiando il nickname e premendo Salva: storico, voti e statistiche restano suoi (e, se vuoi, il nome si aggiorna anche nell'albo d'oro).</li>
       <li><b>Stagioni</b>: date e regole (punti, minimo giocatori, giorni di voto, voti minimi per l'MVP) e stagione in corso.</li>
       <li><b>Testi e albo</b>: regolamento, nome del club e albo d'oro. Può anche eliminare le partite.</li>
       <li><b>Commenti</b>: può cancellare un commento con 🗑 (nella partita o nella scheda del giocatore); il voto resta.</li></ul>`],
@@ -638,14 +638,35 @@ async function renderAdminPlayers() {
   // email dell'account collegato: sta nel profilo (leggibile solo dall'organizzatore), non nella tabella pubblica dei giocatori
   const account = Object.fromEntries((await api.getProfiles()).filter((u) => u.player_id).map((u) => [u.player_id, u]));
   el.innerHTML = `<h2>Giocatori</h2><form class="row" id="f-new-player"><input type="text" name="nickname" placeholder="Nickname" required style="max-width:200px" /><input type="text" name="full_name" placeholder="Nome e cognome (opz.)" style="max-width:260px" /><button class="btn primary">Aggiungi</button></form>
+    <p class="small muted">Per rinominare un giocatore cambia il nickname e premi Salva: partite, voti, commenti e statistiche restano collegati a lui.</p>
     <div class="table-wrap" style="margin-top:1rem;box-shadow:none"><table><thead><tr><th class="name">Nickname</th><th class="name">Nome</th><th class="name">Account</th><th>Attivo</th><th></th></tr></thead><tbody>
     ${S.players.map((p) => `<tr data-id="${p.id}"><td class="name"><input type="text" value="${esc(p.nickname)}" data-f="nickname" style="min-width:120px" /></td><td class="name"><input type="text" value="${esc(p.full_name || "")}" data-f="full_name" style="min-width:160px" /></td><td class="name small">${account[p.id] ? `${esc(account[p.id].email || "")}${account[p.id].status === "approved" ? "" : ' <span class="chip warn mini">in attesa</span>'}` : '<span class="muted">—</span>'}</td><td><input type="checkbox" ${p.active ? "checked" : ""} data-f="active" /></td><td><button class="btn sm" data-save>Salva</button></td></tr>`).join("")}</tbody></table></div>`;
   $("#f-new-player").onsubmit = (e) => { e.preventDefault(); guard(async () => { await api.upsertPlayer({ nickname: e.target.nickname.value.trim(), full_name: e.target.full_name.value.trim() || null }); toast("Giocatore aggiunto"); renderAdminPlayers(); }); };
   el.querySelectorAll("[data-save]").forEach((b) => b.onclick = () => guard(async () => {
-    const tr = b.closest("tr");
-    await api.upsertPlayer({ id: tr.dataset.id, nickname: tr.querySelector('[data-f="nickname"]').value.trim(), full_name: tr.querySelector('[data-f="full_name"]').value.trim() || null, active: tr.querySelector('[data-f="active"]').checked });
-    toast("Salvato"); renderAdminPlayers();
+    const tr = b.closest("tr"), old = { ...S.pmap.get(tr.dataset.id) };
+    const nickname = tr.querySelector('[data-f="nickname"]').value.trim();
+    if (!nickname) throw new Error("Il nickname non può essere vuoto");
+    // rinomina: tutto lo storico è legato all'id del giocatore, cambia solo il nome mostrato
+    const renamed = nickname !== old.nickname;
+    if (renamed) {
+      const clash = S.players.find((p) => p.id !== old.id && p.nickname.toLowerCase() === nickname.toLowerCase());
+      if (clash) throw new Error(`Esiste già un giocatore con il nickname ${clash.nickname}`);
+      if (!confirm(`Rinominare ${old.nickname} in ${nickname}?\nPartite, voti, commenti, MoM, caratteristiche e account collegato restano invariati.`)) return;
+    }
+    await api.upsertPlayer({ id: old.id, nickname, full_name: tr.querySelector('[data-f="full_name"]').value.trim() || null, active: tr.querySelector('[data-f="active"]').checked });
+    if (renamed) await renameInHallOfFame(old.nickname, nickname);
+    toast(renamed ? `Rinominato in ${nickname}` : "Salvato"); renderAdminPlayers();
   }));
+}
+
+// l'albo d'oro salva i vincitori come testo (anche più nomi separati da virgola): su conferma li aggiorna
+async function renameInHallOfFame(from, to) {
+  const is = (n) => n.trim().toLowerCase() === from.toLowerCase();
+  const has = (s) => !!s && s.split(",").some(is);
+  const swap = (s) => has(s) ? s.split(",").map((n) => is(n) ? to : n.trim()).join(", ") : s;
+  const rows = (await api.getHallOfFame()).filter((r) => has(r.impegno_winner) || has(r.efficienza_winner));
+  if (!rows.length || !confirm(`${from} compare in ${rows.length} ${rows.length === 1 ? "voce" : "voci"} dell'albo d'oro. Aggiornare anche lì il nome in ${to}?`)) return;
+  for (const r of rows) await api.upsertHallOfFame({ ...r, impegno_winner: swap(r.impegno_winner), efficienza_winner: swap(r.efficienza_winner) });
 }
 
 // ---- admin: utenti e richieste di registrazione
