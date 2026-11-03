@@ -71,7 +71,11 @@ export async function saveMatch({ id, seasonId, playedOn, result, bianca, nera, 
 export async function deleteMatch(id) { await lag(); D.v_matches = D.v_matches.filter((m) => m.id !== id); }
 export async function addMom(x) { await lag(); D.v_mom_points.push({ id: uid(), season_id: x.seasonId, player_id: x.playerId, match_id: x.matchId, awarded_on: x.awardedOn, source: "manuale", note: x.note }); }
 export async function deleteMom(id) { await lag(); D.v_mom_points = D.v_mom_points.filter((m) => m.id !== id); }
-export async function getMyRatings(matchId) { await lag(); return D.ratings.filter((r) => r.match_id === matchId && r.rater_id === myPlayerId()); }
+// come il database: per RLS l'organizzatore vede i voti di tutti, gli altri solo i propri; il filtro su raterId lo mette il sito
+export async function getMyRatings(matchId, raterId) { await lag(); return D.ratings.filter((r) => r.match_id === matchId && (role === "admin" || r.rater_id === myPlayerId()) && (raterId === undefined || r.rater_id === raterId)); }
+// per i test: un voto dato da un altro giocatore
+export async function __addForeignRating(r) { const id = uid(); D.ratings.push({ id, ...r }); (window.__foreign ||= []).push(id); }
+export async function getMyVotedMatchIds(raterId, matchIds) { await lag(); return [...new Set(D.ratings.filter((r) => r.rater_id === raterId && matchIds.includes(r.match_id)).map((r) => r.match_id))]; }
 export async function upsertRatings(rows) { await lag(); for (const r of rows) { const i = D.ratings.findIndex((x) => x.match_id === r.match_id && x.rater_id === r.rater_id && x.rated_id === r.rated_id); if (i >= 0) D.ratings[i] = { ...D.ratings[i], ...r }; else D.ratings.push({ id: uid(), ...r }); } window.__ratings = D.ratings; }
 export async function deleteRating(id) { await lag(); D.ratings = D.ratings.filter((r) => r.id !== id); window.__ratings = D.ratings; }
 export async function upsertPlayer(p) { await lag(); if (p.id) Object.assign(D.players.find((x) => x.id === p.id), p); else D.players.push({ id: uid(), active: true, ...p }); }

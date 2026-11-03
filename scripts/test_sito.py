@@ -307,9 +307,24 @@ async def _giro_mock(b, errs):
         ok(await pg.locator(".cmt-del").count() == 1, f"{L}: cestino visibile")
         ok(await pg.locator(".vote-lock.admin").count() == 1 and await pg.locator(".roster .score").count() >= 1, f"{L}: l'organizzatore vede le medie a votazione aperta")
         await check_page(pg, f"{L} partita con voti aperti")
+        ok(await pg.locator(".vote-saved").count() == 1, f"{L}: avviso esplicito dopo il salvataggio dei voti")
+        ok(await pg.locator('a[href^="#/vota/"]', has_text="Modifica voti").count() >= 1, f"{L}: dopo il voto il pulsante diventa Modifica voti")
         await pg.click(".cmt-del"); await pg.wait_for_function("!!window.__removed"); await pg.wait_for_timeout(300); await settle(pg)
         ok(await pg.evaluate("!!window.__removed"), f"{L}: click sul cestino cancella (con conferma)")
         ok(await pg.locator(".comment").count() == 0, f"{L}: commento sparito")
+        # regressione: l'organizzatore (che per RLS vede tutti i voti) ritrova nel form solo i suoi, non quelli degli altri
+        mid = pg.url.split("#/partita/")[1]
+        await pg.evaluate("""async (mid) => { const api = await import([...document.scripts].find((s) => s.src.includes('app.js')).src.replace('app.js', 'api.js'));
+            const me = (await api.auth.me()).player_id; const ps = (await api.getMatchPlayers([mid])).map((p) => p.player_id).filter((p) => p !== me);
+            for (const rated of ps) await api.__addForeignRating({ match_id: mid, rater_id: ps.find((p) => p !== rated), rated_id: rated, score: 2, comment: 'Commento di un altro' }); }""", mid)
+        await pg.evaluate("(h) => { location.hash = h; }", f"#/vota/{mid}"); await settle(pg)  # solo hash: il mock non si ricarica
+        ok(await pg.locator(".vote-card.voted").count() == 1 and await pg.locator(".vote-card.voted .vc-val").first.inner_text() == "7", f"{L}: nel form solo il mio voto, non quelli degli altri")
+        ok(await pg.locator("textarea", has_text="Commento di un altro").count() == 0, f"{L}: nel form nessun commento degli altri")
+        ok(await pg.locator("#vote-save").inner_text() == "Salva modifiche" and await pg.locator(".vote-saved").count() == 1, f"{L}: pagina voto in modalità modifica")
+        await pg.evaluate("location.hash = '#/area'"); await settle(pg)
+        ok(await pg.locator('a[href^="#/vota/"]', has_text="Modifica voti").count() >= 1, f"{L}: in Area il pulsante diventa Modifica voti")
+        await pg.evaluate("""async () => { const api = await import([...document.scripts].find((s) => s.src.includes('app.js')).src.replace('app.js', 'api.js'));
+            for (const id of window.__foreign || []) await api.deleteRating(id); window.__foreign = []; }""")
         # stessa cosa dalla scheda giocatore
         await go(pg, U("admin", "&withplayer") + "#/area", 1500)
         await pg.locator('a[href^="#/vota/"]').first.click(); await settle(pg)

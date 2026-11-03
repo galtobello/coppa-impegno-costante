@@ -1,5 +1,5 @@
 // Livello dati: Supabase quando configurato, altrimenti modalità demo (sola lettura).
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=202610291027";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js?v=202611031043";
 
 export const DEMO = SUPABASE_URL.includes("YOUR-PROJECT") || !SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.startsWith("YOUR");
 
@@ -8,7 +8,7 @@ let demo = null;    // dati demo
 
 export async function init() {
   if (DEMO) {
-    demo = await (await fetch("./demo-data.json?v=202610291027")).json();
+    demo = await (await fetch("./demo-data.json?v=202611031043")).json();
     return;
   }
   const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
@@ -177,8 +177,17 @@ export async function addMom({ seasonId, playerId, matchId, awardedOn, note }) {
 }
 export async function deleteMom(id) { unwrap(await sb.from("mom_awards").delete().eq("id", id)); }
 
-export async function getMyRatings(matchId) {
-  return unwrap(await sb.from("player_ratings").select("*").eq("match_id", matchId));
+// solo i voti dati da raterId: senza questo filtro l'organizzatore (che per RLS vede tutti i voti)
+// si ritrovava nel form i voti e i commenti degli altri giocatori
+export async function getMyRatings(matchId, raterId) {
+  if (!raterId) return [];
+  return unwrap(await sb.from("player_ratings").select("*").eq("match_id", matchId).eq("rater_id", raterId));
+}
+// id delle partite (tra matchIds) in cui raterId ha già votato almeno un compagno
+export async function getMyVotedMatchIds(raterId, matchIds) {
+  if (DEMO || !raterId || !matchIds.length) return [];
+  const rows = unwrap(await sb.from("player_ratings").select("match_id").eq("rater_id", raterId).in("match_id", matchIds));
+  return [...new Set(rows.map((r) => r.match_id))];
 }
 export async function upsertRatings(rows) {
   unwrap(await sb.from("player_ratings").upsert(rows, { onConflict: "match_id,rater_id,rated_id" }));

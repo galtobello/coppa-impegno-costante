@@ -1,6 +1,6 @@
-import * as api from "./api.js?v=202610291027";
-import { DEMO } from "./api.js?v=202610291027";
-import { makeTeams, teamStats } from "./squadre.js?v=202610291027";
+import * as api from "./api.js?v=202611031043";
+import { DEMO } from "./api.js?v=202611031043";
+import { makeTeams, teamStats } from "./squadre.js?v=202611031043";
 
 // ============================================================== stato & utilità
 const S = {
@@ -302,6 +302,9 @@ async function viewMatch(id) {
   const mvps = ratings.filter((r) => r.is_mvp);
   const me = myPlayer();
   const iPlayed = me && mps.some((p) => p.player_id === me);
+  const iVoted = iPlayed && m.voting_open && !DEMO && (await api.getMyVotedMatchIds(me, [id]).catch(() => [])).length > 0;
+  // avviso esplicito subito dopo il salvataggio dei voti (lo lascia viewVote, vale una sola volta)
+  const flash = S.voteFlash?.matchId === id ? S.voteFlash : null; S.voteFlash = null;
   const col = (team) => {
     const list = mps.filter((p) => p.team === team).map((p) => ({ ...p, nickname: nick(p.player_id) })).sort((a, b) => a.nickname.localeCompare(b.nickname, "it"));
     const won = m.result === team || m.result === "pareggio";
@@ -310,7 +313,8 @@ async function viewMatch(id) {
         ${rt[p.player_id] ? `<span class="score" title="${rt[p.player_id].votes} voti">${Number(rt[p.player_id].avg_score).toFixed(1)}</span>` : ""}</div>`).join("") || '<div class="muted small">Nessuno</div>'}</div>`;
   };
   return `<div class="page-head"><div class="grow"><h3>Partita</h3><h1>${fmtDate(m.played_on)}</h1>${hasScore(m) ? `<div class="scoreline"><span>Bianca</span><b>${m.score_bianca} – ${m.score_nera}</b><span>Nera</span></div>` : ""}<div class="row">${resultChip(m)}${m.is_valid ? '<span class="chip ok">Valida</span>' : '<span class="chip bad">Non valida (' + m.n_players + ' giocatori)</span>'}${m.voting_open ? `<span class="chip info">Voto aperto fino a ${fmtShort(lastVoteDay(m))}</span>` : ""}</div></div>
-      <div class="row">${iPlayed && m.voting_open && !DEMO ? `<a class="btn primary" href="#/vota/${m.id}">⭐ Vota i compagni</a>` : ""}${canScore() ? `<a class="btn" href="#/tabellino/${m.id}">Modifica</a>` : ""}</div></div>
+      <div class="row">${iPlayed && m.voting_open && !DEMO ? (iVoted ? `<a class="btn" href="#/vota/${m.id}">✏️ Modifica voti</a>` : `<a class="btn primary" href="#/vota/${m.id}">⭐ Vota i compagni</a>`) : ""}${canScore() ? `<a class="btn" href="#/tabellino/${m.id}">Modifica</a>` : ""}</div></div>
+    ${flash ? `<div class="vote-saved" role="status"><span class="vs-icon">✅</span><div class="grow"><b>${flash.title}</b><div class="small">${flash.detail}</div></div></div>` : ""}
     <div class="roster">${col("bianca")}${col("nera")}</div>
     <div class="grid cols-2 team-sk-grid">${teamSkillsCard("bianca", teamIds("bianca"), skillsBy)}${teamSkillsCard("nera", teamIds("nera"), skillsBy)}</div>
     ${m.notes ? `<p class="muted">${esc(m.notes)}</p>` : ""}
@@ -594,13 +598,14 @@ async function viewArea() {
   const roleLabel = ROLE_LABEL[me?.role] || "–";
   const pending = isAdmin() ? (await api.getProfiles()).filter((p) => p.status === "pending").length : 0;
   // partite votabili per il giocatore
-  let votable = [];
+  let votable = [], voted = new Set();
   if (myPlayer() && currentSeason()) {
     const ms = await api.getMatches(currentSeason().id);
     const open = ms.filter((m) => m.voting_open);
     if (open.length) {
       const mps = await api.getMatchPlayers(open.map((m) => m.id));
       votable = open.filter((m) => mps.some((p) => p.match_id === m.id && p.player_id === myPlayer()));
+      voted = new Set(await api.getMyVotedMatchIds(myPlayer(), votable.map((m) => m.id)));
     }
   }
   later(() => {
@@ -618,7 +623,7 @@ async function viewArea() {
   return `<div class="page-head"><div class="grow row">${avatar(me?.nickname || S.user.email, "lg")}<div><h3>${roleLabel}</h3><h1>${esc(me?.nickname || S.user.email)}</h1><div class="small muted">${esc(S.user.email)}</div></div></div><button class="btn" id="btn-logout">Esci</button></div>
     ${!me?.player_id ? `<div class="card" style="margin-bottom:1rem"><h2>Account non collegato a un giocatore</h2><p class="muted">Chiedi all'organizzatore di collegare il tuo account (${esc(S.user.email)}) al tuo nickname: potrai votare i compagni dopo le partite.</p></div>` : ""}
     <div class="grid cols-2">
-      ${me?.player_id ? `<div class="card"><h2>⭐ Vota i compagni</h2>${votable.length ? votable.map((m) => `<div class="row" style="justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--line)"><span>${fmtDate(m.played_on)} <span class="small muted">entro ${fmtShort(lastVoteDay(m))}</span></span><a class="btn sm primary" href="#/vota/${m.id}">Vota</a></div>`).join("") : `<p class="muted">Nessuna partita con votazioni aperte in cui hai giocato. Si vota per ${currentSeason()?.voting_days ?? 7} giorni a partire dal giorno della partita.</p>`}</div>` : ""}
+      ${me?.player_id ? `<div class="card"><h2>⭐ Vota i compagni</h2>${votable.length ? votable.map((m) => `<div class="row" style="justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--line)"><span>${fmtDate(m.played_on)} ${voted.has(m.id) ? '<span class="chip ok mini">✓ Votato</span> ' : ""}<span class="small muted">entro ${fmtShort(lastVoteDay(m))}</span></span>${voted.has(m.id) ? `<a class="btn sm" href="#/vota/${m.id}">✏️ Modifica voti</a>` : `<a class="btn sm primary" href="#/vota/${m.id}">Vota</a>`}</div>`).join("") : `<p class="muted">Nessuna partita con votazioni aperte in cui hai giocato. Si vota per ${currentSeason()?.voting_days ?? 7} giorni a partire dal giorno della partita.</p>`}</div>` : ""}
       ${canScore() ? `<div class="card"><h2>📋 Tabellini</h2><p class="muted small">Registra la partita del venerdì: squadre, vincente e, se serve, MoM assegnati a mano.</p><div class="row"><a class="btn primary" href="#/tabellino">+ Nuovo tabellino</a><a class="btn" href="#/partite">Elenco partite</a></div></div>` : ""}
     </div>
     ${isAdmin() ? `<div style="margin-top:1.5rem"><h2>Amministrazione</h2>
@@ -1051,16 +1056,19 @@ async function viewVote(matchId) {
   let m = null;
   for (const s of S.seasons) { const ms = await api.getMatches(s.id); m = ms.find((x) => x.id === matchId); if (m) break; }
   if (!m) return `<div class="empty">Partita non trovata.</div>`;
-  const [mps, mine] = await Promise.all([api.getMatchPlayers([matchId]), api.getMyRatings(matchId)]);
+  const [mps, mine] = await Promise.all([api.getMatchPlayers([matchId]), api.getMyRatings(matchId, myPlayer())]);
   const me = myPlayer();
   if (!mps.some((p) => p.player_id === me)) return `<div class="card"><h2>Non hai giocato questa partita</h2><p class="muted">Puoi votare solo le partite in cui sei stato in campo.</p></div>`;
   if (!m.voting_open) return `<div class="card"><h2>Votazioni chiuse</h2><p class="muted">Si poteva votare fino a ${fmtDate(lastVoteDay(m))}. L'MVP è stato assegnato a chi ha la media più alta.</p></div>`;
   const myTeam = mps.find((p) => p.player_id === me).team;
   const otherTeam = myTeam === "bianca" ? "nera" : "bianca";
   const TEAM = { bianca: "Bianca", nera: "Nera" };
-  const prev = Object.fromEntries(mine.map((r) => [r.rated_id, r]));
+  // difesa in più: solo i voti dati da me, anche se il database ne restituisse altri
+  const myRows = mine.filter((r) => r.rater_id === me);
+  const prev = Object.fromEntries(myRows.map((r) => [r.rated_id, r]));
+  const editing = myRows.length > 0;
   // voto corrente per giocatore: parte dai voti già dati, nessun voto di default
-  const score = Object.fromEntries(mine.map((r) => [r.rated_id, r.score]));
+  const score = Object.fromEntries(myRows.map((r) => [r.rated_id, r.score]));
   const others = mps.filter((p) => p.player_id !== me).map((p) => ({ ...p, nickname: nick(p.player_id) }));
   const byTeam = (t) => others.filter((p) => p.team === t).sort((a, b) => a.nickname.localeCompare(b.nickname, "it"));
 
@@ -1099,12 +1107,15 @@ async function viewVote(matchId) {
         else if (prev[id]) removed.push(prev[id].id);
       }
       if (!rows.length && !removed.length) throw new Error("Tocca un numero per votare almeno un giocatore");
-      const btn = $("#vote-save"); btn.disabled = true;
+      const btn = $("#vote-save"), label = btn.textContent; btn.disabled = true; btn.textContent = "Salvataggio…";
       try {
         if (rows.length) await api.upsertRatings(rows);
         for (const rid of removed) await api.deleteRating(rid);
-      } finally { btn.disabled = false; }
-      toast(`${rows.length === 1 ? "Salvato 1 voto" : `Salvati ${rows.length} voti`}${removed.length ? `, ${removed.length} ${removed.length === 1 ? "tolto" : "tolti"}` : ""}. Grazie!`); location.hash = "#/partita/" + matchId;
+      } catch (err) { btn.disabled = false; btn.textContent = label; throw err; }
+      const nc = rows.filter((r) => r.comment).length;
+      const what = `${rows.length === 1 ? "1 voto" : `${rows.length} voti`}${nc ? ` e ${nc === 1 ? "1 commento" : `${nc} commenti`}` : ""}${removed.length ? ` (${removed.length} ${removed.length === 1 ? "voto tolto" : "voti tolti"})` : ""}`;
+      S.voteFlash = { matchId, title: editing ? "Voti aggiornati" : "Voti salvati", detail: `${rows.length ? `Hai salvato ${what}.` : `Hai tolto tutti i tuoi voti${removed.length ? ` (${removed.length})` : ""}.`} Puoi modificarli fino a ${fmtDate(lastVoteDay(m))} con «Modifica voti».` };
+      toast(rows.length ? `${editing ? "Voti aggiornati" : "Voti salvati"}: ${what}. Grazie!` : "Voti tolti"); location.hash = "#/partita/" + matchId;
     }); };
   });
 
@@ -1117,12 +1128,13 @@ async function viewVote(matchId) {
       <h2 class="vt-head"><span>${title} <small>Squadra ${TEAM[t]}</small></span><span class="chip" id="vt-${t}"></span></h2>
       <div class="vote-grid">${list.map(card).join("")}</div></section>` : ""; };
 
-  return `<div class="page-head"><div class="grow"><h3>Vota i compagni</h3><h1>${fmtDate(m.played_on)}</h1>
+  return `<div class="page-head"><div class="grow"><h3>${editing ? "Modifica i tuoi voti" : "Vota i compagni"}</h3><h1>${fmtDate(m.played_on)}</h1>
+      ${editing ? `<div class="vote-saved"><span class="vs-icon">✅</span><div class="grow"><b>Hai già votato questa partita</b><div class="small">Qui sotto trovi i tuoi ${myRows.length === 1 ? "voto" : `${myRows.length} voti`} e i tuoi commenti: cambiali e premi «Salva modifiche».</div></div></div>` : ""}
       <p class="muted small">Tocca un voto da 1 a 10 (ritoccalo per toglierlo): chi non tocchi non riceve voti. I voti sono anonimi, i commenti invece sono firmati con il tuo nickname. Puoi modificarli fino a ${fmtDate(lastVoteDay(m))}.</p></div></div>
     <form id="f-vote" class="vote-form">
       ${section(myTeam, "La tua squadra")}
       ${section(otherTeam, "Avversari")}
-      <div class="savebar"><div id="vote-sum" class="small"></div><a class="btn" href="#/partita/${matchId}">Annulla</a><button class="btn primary" type="submit" id="vote-save">Salva</button></div>
+      <div class="savebar"><div id="vote-sum" class="small"></div><a class="btn" href="#/partita/${matchId}">Annulla</a><button class="btn primary" type="submit" id="vote-save">${editing ? "Salva modifiche" : "Salva voti"}</button></div>
     </form>`;
 }
 
